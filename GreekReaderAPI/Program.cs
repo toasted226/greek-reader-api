@@ -1,17 +1,22 @@
 using Microsoft.OpenApi;
 using Dapper;
+using DbUp;
 using GreekReaderAPI.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 var connString = builder.Configuration.GetConnectionString("Postgres")!;
 
-if (args.Contains("--migrate"))
+if (args.Contains("--reset") && builder.Environment.IsDevelopment())
+{
+    DropDatabase.For.PostgresqlDatabase(connString);
+}
+if (args.Contains("--migrate") || args.Contains("--reset"))
 {
     Migrate.Run(connString);
     return;
 }
 
-builder.Services.AddNpgsqlDataSource(connString, dsBuilder => { });
+builder.Services.AddNpgsqlDataSource(connString, _ => { });
 
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
