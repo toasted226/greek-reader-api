@@ -1,0 +1,11 @@
+@GreekReaderAPI_HostAddress = http://localhost:3000
+
+GET {{GreekReaderAPI_HostAddress}}/
+Accept: application/json
+
+###
+
+GET {{GreekReaderAPI_HostAddress}}/todos/1
+Accept: application/json
+
+###
