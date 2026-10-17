@@ -10,6 +10,7 @@ if (args.Contains("--reset") && builder.Environment.IsDevelopment())
 {
     DropDatabase.For.PostgresqlDatabase(connString);
 }
+
 if (args.Contains("--migrate") || args.Contains("--reset"))
 {
     Migrate.Run(connString);
@@ -21,6 +22,7 @@ builder.Services.AddNpgsqlDataSource(connString, _ => { });
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
 
 builder.Services.AddHealthChecks().AddNpgSql();
 
@@ -34,7 +36,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
     app.MapOpenApi();
-    app.UseSwaggerUI(options => { options.SwaggerEndpoint("/openapi/v1.json", "GreekReaderAPI v1"); });
+    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "GreekReaderAPI v1"));
 }
 
 app.MapGet("/", () => new { Message = "Hello, world!" });
