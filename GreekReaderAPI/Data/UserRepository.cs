@@ -6,22 +6,22 @@ namespace GreekReaderAPI.Data;
 
 public sealed class UserRepository(NpgsqlDataSource db) : IUserRepository
 {
-    public async Task<User?> InsertAsync(User user, CancellationToken ct = default)
+    public async Task<User?> CreateAsync(string email, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        return await conn.ExecuteScalarAsync<User>(
+        return await conn.QuerySingleAsync<User>(
             new CommandDefinition(
                 """
                 INSERT INTO users (email, created_at) 
                 VALUES (@Email, @CreatedAt)
                 RETURNING *
                 """,
-                user, cancellationToken: ct
+                new { Email = email, CreatedAt = DateTimeOffset.UtcNow }, cancellationToken: ct
             )
         );
     }
 
-    public async Task<User?> GetAsync(int id, CancellationToken ct = default)
+    public async Task<User?> GetAsync(long id, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         return await conn.QuerySingleOrDefaultAsync<User>(

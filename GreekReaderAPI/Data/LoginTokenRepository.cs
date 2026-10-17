@@ -6,10 +6,10 @@ namespace GreekReaderAPI.Data;
 
 public sealed class LoginTokenRepository(NpgsqlDataSource db) : ILoginTokenRepository
 {
-    public async Task<long> InsertAsync(LoginToken token, CancellationToken ct = default)
+    public async Task<long> CreateAsync(LoginToken token, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        return await conn.ExecuteScalarAsync<long>(
+        return await conn.QuerySingleAsync<long>(
             new CommandDefinition(
                 """
                 INSERT INTO login_tokens (user_id, token_hash, expires_at, used_at)
@@ -17,6 +17,29 @@ public sealed class LoginTokenRepository(NpgsqlDataSource db) : ILoginTokenRepos
                 RETURNING id
                 """,
                 token, cancellationToken: ct
+            )
+        );
+    }
+
+    public async Task<User?> ConsumeAsync(byte[] hash, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<User>(
+            new CommandDefinition(
+                """
+                WITH used AS (
+                    UPDATE  login_tokens SET
+                    used_at = now()
+                    WHERE token_hash = @hash
+                        AND used_at is null
+                        AND expires_at > now()
+                    RETURNING user_id
+                )
+                SELECT u.id, u.email, u.created_at 
+                FROM users u
+                JOIN used ON used.user_id = u.id
+                """,
+                new { hash }, cancellationToken: ct
             )
         );
     }

@@ -2,6 +2,10 @@ using Microsoft.OpenApi;
 using Dapper;
 using DbUp;
 using GreekReaderAPI.Data;
+using GreekReaderAPI.Email;
+using GreekReaderAPI.Endpoints;
+using GreekReaderAPI.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 var connString = builder.Configuration.GetConnectionString("Postgres")!;
@@ -21,15 +25,53 @@ builder.Services.AddNpgsqlDataSource(connString, _ => { });
 
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
-
 builder.Services.AddHealthChecks().AddNpgSql();
+builder.Services.AddValidation();
 
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1; });
 
+// Dependency Injection
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
+}
+else
+{
+    // TODO: implement production email sending
+}
+
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(o =>
+    {
+        o.Cookie.Name = "session";
+        o.Cookie.HttpOnly = true;
+        o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        o.Cookie.SameSite = SameSiteMode.Lax;
+        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        o.SlidingExpiration = true;
+
+        o.Events.OnRedirectToLogin = ctx =>
+        {
+            ctx.Response.StatusCode = 401;
+            return Task.CompletedTask;
+        };
+        o.Events.OnRedirectToAccessDenied = ctx =>
+        {
+            ctx.Response.StatusCode = 403;
+            return Task.CompletedTask;
+        };
+    });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health");
 
 if (app.Environment.IsDevelopment())
@@ -40,9 +82,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/", () => new { Message = "Hello, world!" });
-
-app.MapGet("/hi/{name}", (string name) =>
-    new { Message = $"Hello, {name}!" }
-);
+app.MapAuthEndpoints();
 
 app.Run("http://localhost:3000");
