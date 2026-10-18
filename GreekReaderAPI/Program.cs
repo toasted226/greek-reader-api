@@ -22,6 +22,7 @@ if (args.Contains("--migrate") || args.Contains("--reset"))
 }
 
 builder.Services.AddNpgsqlDataSource(connString, _ => { });
+builder.Services.AddTransient<LexiconImporter>();
 
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
@@ -33,7 +34,10 @@ builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVer
 // Dependency Injection
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
+builder.Services.AddScoped<ILexiconRepository, LexiconRepository>();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ILexiconService, LexiconService>();
 
 if (builder.Environment.IsDevelopment())
 {
@@ -72,6 +76,16 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
+if (args.Contains("--import"))
+{
+    await using var scope =  app.Services.CreateAsyncScope();
+    var importer = scope.ServiceProvider.GetRequiredService<LexiconImporter>();
+
+    var entries = GreekReader.Interop.Api.Load();
+    await importer.ImportAsync(entries);
+    return;
+}
+
 app.MapHealthChecks("/health");
 
 if (app.Environment.IsDevelopment())
@@ -83,5 +97,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/", () => new { Message = "Hello, world!" });
 app.MapAuthEndpoints();
+app.MapLexiconEndpoints();
 
 app.Run("http://localhost:3000");
