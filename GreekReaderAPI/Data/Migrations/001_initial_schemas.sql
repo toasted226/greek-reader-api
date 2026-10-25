@@ -43,5 +43,13 @@ create table forms
     features        text[] not null default '{}'
 );
 
+create table user_lemmas 
+(
+    id int generated always as identity primary key,
+    user_id bigint not null references users (id) on delete cascade,
+    lemma_id int not null references lemmas (id) on delete cascade,
+    context_sentence text not null
+);
+
 create index forms_form_normalized_idx on forms (form_normalized);
 create index forms_lemma_id_idx on forms (lemma_id);

@@ -1,5 +1,6 @@
 using Dapper;
 using GreekReader.Interop;
+using GreekReaderAPI.Models;
 using Npgsql;
 
 namespace GreekReaderAPI.Data;
@@ -28,7 +29,7 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
         public string English { get; set; } = "";
     }
 
-    private async Task<Dictionary<int, LemmaEntry>> LoadAsync(int[] ids, CancellationToken ct)
+    private async Task<Dictionary<int, LexiconLemma>> LoadAsync(int[] ids, CancellationToken ct)
     {
         if (ids.Length == 0)
             return [];
@@ -48,20 +49,19 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
 
         return lemmas.ToDictionary(
             l => l.Id,
-            l => new LemmaEntry
-            {
-                Lemma = l.Lemma,
-                Pos = l.Pos,
-                Glosses = l.Glosses,
-                Examples = [.. examples[l.Id].Select(e => new Example(e.Greek, e.English))],
-                Forms = [.. forms[l.Id].Select(f => new FormEntry(f.Form, f.Features))]
-            });
+            l => new LexiconLemma(
+                l.Id,
+                l.Lemma,
+                l.Pos,
+                l.Glosses,
+                [.. examples[l.Id].Select(e => new Example(e.Greek, e.English))],
+                [.. forms[l.Id].Select(f => new FormEntry(f.Form, f.Features))]));
     }
 
-    public async Task<LemmaEntry[]> GetAsync(int[] ids, CancellationToken ct = default) =>
+    public async Task<LexiconLemma[]> GetAsync(int[] ids, CancellationToken ct = default) =>
         [.. (await LoadAsync(ids, ct)).Values.OrderBy(e => e.Lemma, StringComparer.Ordinal)];
     
-    public async Task<Dictionary<string, LemmaEntry[]>> GetByFormsAsync(
+    public async Task<Dictionary<string, LexiconLemma[]>> GetByFormsAsync(
         string[] forms, CancellationToken ct = default)
     {
         if (forms.Length == 0)
@@ -81,5 +81,62 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                 g => g.Select(p => entries[p.LemmaId])
                     .OrderBy(e => e.Lemma, StringComparer.Ordinal)
                     .ToArray());
+    }
+
+    public async Task<UserLemma[]> GetUserLemmasAsync(long userId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<UserLemma>(new CommandDefinition(
+            """
+            select
+                id,
+                user_id,
+                lemma_id,
+                context_sentence
+            from user_lemmas where user_id = @userId
+            order by id
+            """,
+            new { userId }, cancellationToken: ct));
+        return rows.ToArray();
+    }
+
+    public async Task<UserLemma?> GetUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<UserLemma>(new CommandDefinition(
+            """
+            select
+                id,
+                user_id,
+                lemma_id,
+                context_sentence
+            from user_lemmas where user_id = @userId and lemma_id = @lemmaId
+            order by id
+            limit 1
+            """,
+            new { userId, lemmaId }, cancellationToken: ct));
+    }
+
+    public async Task<UserLemma?> CreateUserLemmaAsync(
+        long userId, int lemmaId, string contextSentence, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<UserLemma>(new CommandDefinition(
+            """
+            insert into user_lemmas (user_id, lemma_id, context_sentence)
+            select @userId, @lemmaId, @contextSentence
+            where exists (select 1 from lemmas where id = @lemmaId)
+            returning id, user_id, lemma_id, context_sentence
+            """,
+            new { userId, lemmaId, contextSentence }, cancellationToken: ct));
+    }
+
+    public async Task<bool> DeleteUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var deleted = await conn.ExecuteAsync(new CommandDefinition(
+            "delete from user_lemmas where user_id = @userId and lemma_id = @lemmaId",
+            new { userId, lemmaId }, cancellationToken: ct));
+        return deleted > 0;
     }
 }

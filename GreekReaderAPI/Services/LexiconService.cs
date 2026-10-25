@@ -1,33 +1,15 @@
 using GreekReader.Interop;
 using GreekReaderAPI.Data;
+using GreekReaderAPI.Models;
 
 namespace GreekReaderAPI.Services;
 
-public sealed record AnalyseResponse(
-    TokenResponse Token,
-    LemmaResponse[] Lemmas);
-
-public sealed record TokenResponse(
-    string Text,
-    int Start,
-    bool IsWord);
-
-public sealed record LemmaResponse(
-    string Lemma,
-    string Pos,
-    string[] Glosses,
-    ExampleResponse[] Examples,
-    FormResponse[] Forms);
-
-public sealed record ExampleResponse(string Greek, string English);
-
-public sealed record FormResponse(string Form, string[] Features);
-
 public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
 {
-    private static LemmaResponse ToLemmaResponse(LemmaEntry l)
+    private static LemmaResponse ToLemmaResponse(LexiconLemma l)
     {
         return new LemmaResponse(
+            l.Id,
             l.Lemma,
             l.Pos.ToString().ToLowerInvariant(),
             l.Glosses,
@@ -68,7 +50,7 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
 
         var byForm = await lexicon.GetByFormsAsync(candidates, ct);
 
-        LemmaEntry[] Resolve(string rtext)
+        LexiconLemma[] Resolve(string rtext)
         {
             foreach (var c in Candidates(rtext))
                 if (byForm.TryGetValue(c, out var hits))
@@ -82,4 +64,43 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
             )
         ).ToArray();
     }
+
+    public async Task<UserLemmaResponse[]> GetUserLemmasAsync(long userId, CancellationToken ct = default)
+    {
+        var userLemmas = await lexicon.GetUserLemmasAsync(userId, ct);
+        var lemmaEntries = await lexicon.GetAsync([.. userLemmas.Select(l => l.LemmaId).Distinct()], ct);
+        var byId = lemmaEntries.ToDictionary(l => l.Id);
+
+        return userLemmas
+            .Where(l => byId.ContainsKey(l.LemmaId))
+            .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
+            .ToArray();
+    }
+
+    public async Task<UserLemmaResponse?> GetUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default)
+    {
+        var userLemma = await lexicon.GetUserLemmaAsync(userId, lemmaId, ct);
+        if (userLemma is null)
+            return null;
+
+        var lemma = (await lexicon.GetAsync([lemmaId], ct)).FirstOrDefault();
+        return lemma is null ? null : ToUserLemmaResponse(userLemma, lemma);
+    }
+
+    public async Task<UserLemmaResponse?> CreateUserLemmaAsync(
+        long userId, int lemmaId, string contextSentence, CancellationToken ct = default)
+    {
+        var userLemma = await lexicon.CreateUserLemmaAsync(userId, lemmaId, contextSentence, ct);
+        if (userLemma is null)
+            return null;
+
+        var lemma = (await lexicon.GetAsync([lemmaId], ct)).FirstOrDefault();
+        return lemma is null ? null : ToUserLemmaResponse(userLemma, lemma);
+    }
+
+    public Task<bool> DeleteUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default) =>
+        lexicon.DeleteUserLemmaAsync(userId, lemmaId, ct);
+
+    private static UserLemmaResponse ToUserLemmaResponse(UserLemma userLemma, LexiconLemma lemma) =>
+        new(userLemma.Id, userLemma.UserId, ToLemmaResponse(lemma), userLemma.ContextSentence);
 }

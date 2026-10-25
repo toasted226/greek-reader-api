@@ -15,7 +15,7 @@ public sealed class LexiconImporter(NpgsqlDataSource db)
         var tx = await conn.BeginTransactionAsync(ct);
 
         await conn.ExecuteAsync(new CommandDefinition(
-            "truncate forms, examples, lemmas restart identity",
+            "truncate forms, examples, user_lemmas, lemmas restart identity",
             transaction: tx,
             cancellationToken: ct
         ));
