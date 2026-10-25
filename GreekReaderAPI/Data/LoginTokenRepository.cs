@@ -107,4 +107,16 @@ public sealed class LoginTokenRepository(NpgsqlDataSource db) : ILoginTokenRepos
         );
         return rows > 0;
     }
+
+    public async Task<bool> DeleteByUserIdAsync(long userId, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM login_tokens WHERE user_id = @userId",
+                new { userId }, cancellationToken: ct
+            )
+        );
+        return rows > 0;
+    }
 }

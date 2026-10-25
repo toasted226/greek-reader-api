@@ -8,6 +8,35 @@ using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets<Program>();
+}
+
+// Also support .env file
+var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
+if (File.Exists(envFile))
+{
+    foreach (var line in File.ReadAllLines(envFile))
+    {
+        var trimmed = line.Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
+            continue;
+        var parts = trimmed.Split('=', 2);
+        if (parts.Length == 2)
+        {
+            Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+        }
+    }
+}
+
+builder.Configuration.AddEnvironmentVariables();
+
 var connString = builder.Configuration.GetConnectionString("Postgres")!;
 
 if (args.Contains("--reset") && builder.Environment.IsDevelopment())
@@ -39,14 +68,28 @@ builder.Services.AddScoped<ILexiconRepository, LexiconRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILexiconService, LexiconService>();
 
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
+
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
+    builder.Services.AddSingleton<IEmailSender, MailKitEmailSender>();
+    //builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 }
 else
 {
-    // TODO: implement production email sending
+    builder.Services.AddSingleton<IEmailSender, MailKitEmailSender>();
 }
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -55,8 +98,8 @@ builder.Services
         o.Cookie.Name = "session";
         o.Cookie.HttpOnly = true;
         o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        o.Cookie.SameSite = SameSiteMode.Lax;
-        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        o.Cookie.SameSite = SameSiteMode.None;
+        o.ExpireTimeSpan = TimeSpan.FromDays(1);
         o.SlidingExpiration = true;
 
         o.Events.OnRedirectToLogin = ctx =>
@@ -73,6 +116,7 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+app.UseCors("AllowAngular");
 app.UseAuthentication();
 app.UseAuthorization();
 

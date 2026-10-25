@@ -11,4 +11,5 @@ public interface ILoginTokenRepository
     Task<LoginToken?> GetByTokenHashAsync(byte[] tokenHash, CancellationToken ct = default);
     Task<bool> UpdateAsync(LoginToken token, CancellationToken ct = default);
     Task<bool> DeleteAsync(long id, CancellationToken ct = default);
+    Task<bool> DeleteByUserIdAsync(long userId, CancellationToken ct = default);
 }

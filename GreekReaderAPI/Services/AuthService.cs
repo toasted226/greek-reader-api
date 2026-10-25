@@ -23,6 +23,10 @@ public sealed class AuthService(
         var user = await users.GetByEmailAsync(normalisedAddress, ct)
                    ?? await users.CreateAsync(normalisedAddress, ct);
 
+        if (user is null) return;
+
+        await tokens.DeleteByUserIdAsync(user.Id, ct);
+
         var (raw, hash) = TokenGenerator.Create();
         var token = new LoginToken
         {

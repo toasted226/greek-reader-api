@@ -1,10 +1,12 @@
 namespace GreekReaderAPI.Email;
 
-public sealed class ConsoleEmailSender(ILogger<ConsoleEmailSender> log) : IEmailSender
+public sealed class ConsoleEmailSender(ILogger<ConsoleEmailSender> log, IConfiguration configuration) : IEmailSender
 {
     public Task SendSignInLinkAsync(string to, string rawToken, CancellationToken ct = default)
     {
-        log.LogInformation($"Sign-in Link for {to}: http://localhost:3000/auth/verify?token={rawToken}");
+        var frontendBaseUrl = configuration["App:FrontendBaseUrl"] ?? "http://localhost:4200";
+        var signInUrl = $"{frontendBaseUrl.TrimEnd('/')}/auth/verify?token={rawToken}";
+        log.LogInformation($"Sign-in Link for {to}: {signInUrl}");
         return Task.CompletedTask;
     }
 }

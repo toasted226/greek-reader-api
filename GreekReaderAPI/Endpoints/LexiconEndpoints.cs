@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using GreekReader.Interop;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 
