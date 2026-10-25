@@ -42,4 +42,8 @@ Global
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
+	GlobalSection(RiderSharedRunConfigurations) = postSolution
+		File = ..\..\phone-book-challenge\backend\PhoneBookAPI\.run\PhoneBookAPI_ https.run.xml
+		File = ..\..\phone-book-challenge\backend\PhoneBookAPI\.run\DB.run.xml
+	EndGlobalSection
 EndGlobal
