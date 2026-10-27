@@ -24,12 +24,25 @@ public static class AuthEndpoints
         var group = app.MapGroup("/auth");
         group.MapPost("/request", RequestSignIn);
         group.MapPost("/verify", Verify);
+        group.MapPost("/logout", Logout)
+            .RequireAuthorization();
         group.MapGet("/me", Me)
             .RequireAuthorization()
             .Produces<MeResponse>()
             .Produces(StatusCodes.Status401Unauthorized);
-        group.MapDelete("/me", DeleteMe);
+        group.MapDelete("/me", DeleteMe)
+            .RequireAuthorization();
         return app;
+    }
+
+    private static async Task<IResult> Logout
+    (
+        HttpContext ctx,
+        CancellationToken ct
+    )
+    {
+        await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteMe
@@ -53,7 +66,7 @@ public static class AuthEndpoints
         var user = await users.GetAsync(principal.GetUserId(), ct);
         if (user == null)
             return TypedResults.Unauthorized();
-        
+
         return TypedResults.Ok(new MeResponse(user.Id, user.Email, user.CreatedAt));
     }
 
