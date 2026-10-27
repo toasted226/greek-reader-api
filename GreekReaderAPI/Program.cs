@@ -18,23 +18,6 @@ if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>();
 }
 
-// Also support .env file
-var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
-if (File.Exists(envFile))
-{
-    foreach (var line in File.ReadAllLines(envFile))
-    {
-        var trimmed = line.Trim();
-        if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
-            continue;
-        var parts = trimmed.Split('=', 2);
-        if (parts.Length == 2)
-        {
-            Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
-        }
-    }
-}
-
 builder.Configuration.AddEnvironmentVariables();
 
 var connString = builder.Configuration.GetConnectionString("Postgres")!;

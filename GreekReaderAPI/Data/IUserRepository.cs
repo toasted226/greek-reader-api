@@ -8,5 +8,5 @@ public interface IUserRepository
     Task<User?> GetAsync(long id, CancellationToken ct = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
     Task<bool> UpdateAsync(User user, CancellationToken ct = default);
-    Task<bool> DeleteAsync(int id, CancellationToken ct = default);
+    Task<bool> DeleteAsync(long id, CancellationToken ct = default);
 }

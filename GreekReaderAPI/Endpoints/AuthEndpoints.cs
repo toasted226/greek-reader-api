@@ -28,7 +28,19 @@ public static class AuthEndpoints
             .RequireAuthorization()
             .Produces<MeResponse>()
             .Produces(StatusCodes.Status401Unauthorized);
+        group.MapDelete("/me", DeleteMe);
         return app;
+    }
+
+    private static async Task<IResult> DeleteMe
+    (
+        ClaimsPrincipal principal,
+        IUserRepository users,
+        CancellationToken ct
+    )
+    {
+        await users.DeleteAsync(principal.GetUserId(), ct);
+        return Results.NoContent();
     }
 
     private static async Task<Results<Ok<MeResponse>, UnauthorizedHttpResult>> Me

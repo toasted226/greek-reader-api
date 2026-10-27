@@ -60,12 +60,15 @@ public sealed class UserRepository(NpgsqlDataSource db) : IUserRepository
         return rows > 0;
     }
 
-    public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
+    public async Task<bool> DeleteAsync(long id, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         var rows = await conn.ExecuteAsync(
             new CommandDefinition(
-                "DELETE FROM users WHERE id = @id",
+                """
+                DELETE FROM user_lemmas WHERE user_id = @id;
+                DELETE FROM users WHERE id = @id;
+                """,
                 new { id }, cancellationToken: ct
             )
         );
