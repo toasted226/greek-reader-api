@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
 
+namespace GreekReaderAPI.Security;
+
 public static class TokenGenerator
 {
     public static (string Raw, byte[] Hash) Create()

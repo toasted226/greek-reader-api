@@ -6,6 +6,7 @@ using GreekReaderAPI.Email;
 using GreekReaderAPI.Endpoints;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,6 +48,7 @@ builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVer
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
 builder.Services.AddScoped<ILexiconRepository, LexiconRepository>();
+builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILexiconService, LexiconService>();
@@ -98,8 +100,40 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (ctx, ct) =>
+    {
+        var retryAfter = ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan remaining)
+            ? Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds))
+            : 0;
+
+        ctx.HttpContext.Response.Headers["Retry-After"] = retryAfter.ToString();
+        await ctx.HttpContext.Response.WriteAsJsonAsync(
+            new
+            {
+                error = "Too many OTP requests. Please try again later.",
+                retryAfterSeconds = retryAfter
+            },
+            ct);
+    };
+    options.AddPolicy("otp-request", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
 var app = builder.Build();
+app.UseRouting();
 app.UseCors("AllowAngular");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

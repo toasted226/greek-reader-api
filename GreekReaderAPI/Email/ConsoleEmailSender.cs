@@ -9,4 +9,10 @@ public sealed class ConsoleEmailSender(ILogger<ConsoleEmailSender> log, IConfigu
         log.LogInformation($"Sign-in Link for {to}: {signInUrl}");
         return Task.CompletedTask;
     }
+
+    public Task SendSignInOtpAsync(string to, int code, CancellationToken ct)
+    {
+        log.LogInformation($"Sign-in OTP for {to}: {code}");
+        return Task.CompletedTask;
+    }
 }
