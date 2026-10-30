@@ -126,4 +126,4 @@ app.MapGet("/", () => new { Message = "Hello, world!" });
 app.MapAuthEndpoints();
 app.MapLexiconEndpoints();
 
-app.Run("http://localhost:3000");
+app.Run();

@@ -1,7 +1,9 @@
+CREATE EXTENSION IF NOT EXISTS citext;
+
 create table users
 (
     id         bigint generated always as identity primary key,
-    email      text        not null,
+    email      citext        not null,
     created_at timestamptz not null default now()
 );
 
@@ -17,6 +19,19 @@ create table login_tokens
 );
 
 create unique index login_tokens_user_id_idx on login_tokens (user_id);
+
+create table otp_codes 
+(
+    id uuid primary key,
+    email citext not null,
+    code_hash bytea not null,
+    expires_at timestamptz not null,
+    attempts int not null default 0,
+    consumed_at timestamptz null,
+    created_at timestamptz not null default now()
+);
+
+create index on otp_codes (email, created_at desc);
 
 create table lemmas
 (

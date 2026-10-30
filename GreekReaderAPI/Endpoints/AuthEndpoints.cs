@@ -22,16 +22,19 @@ public static class AuthEndpoints
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/auth");
+        
         group.MapPost("/request", RequestSignIn);
         group.MapPost("/verify", Verify);
         group.MapPost("/logout", Logout)
             .RequireAuthorization();
+        
         group.MapGet("/me", Me)
             .RequireAuthorization()
             .Produces<MeResponse>()
             .Produces(StatusCodes.Status401Unauthorized);
         group.MapDelete("/me", DeleteMe)
             .RequireAuthorization();
+        
         return app;
     }
 
