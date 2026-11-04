@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using GreekReader.Interop;
 using GreekReaderAPI.Data;
@@ -9,23 +8,6 @@ using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace GreekReaderAPI.Endpoints;
-
-public sealed record AnalyseRequest(
-    [property: Required] string Text
-);
-
-public sealed record UploadFileResponse(
-    long? FileId,
-    string OriginalFileName,
-    string DisplayName,
-    int CharacterCount,
-    long FileSizeBytes,
-    AnalyseResponse[] Analysis);
-
-public sealed record CreateUserLemmaRequest(
-    [property: Required] int LemmaId,
-    [property: Required] string ContextSentence
-);
 
 public static class LexiconEndpoints
 {
@@ -65,10 +47,18 @@ public static class LexiconEndpoints
             .Produces(StatusCodes.Status413PayloadTooLarge)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
             .Produces(StatusCodes.Status429TooManyRequests);
-        files.MapGet("", GetFiles);
-        files.MapGet("/{fileId:int}", GetFile);
-        files.MapDelete("/{fileId:int}", DeleteFile);
-        
+        files.MapGet("", GetFiles)
+            .Produces<FileMetadataResponse[]>()
+            .Produces(StatusCodes.Status401Unauthorized);
+        files.MapGet("/{fileId:int}", GetFile)
+            .Produces<UploadFileResponse>()
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+        files.MapDelete("/{fileId:int}", DeleteFile)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+
         return app;
     }
 
@@ -119,7 +109,7 @@ public static class LexiconEndpoints
         var deleted = await lexicon.DeleteUserLemmaAsync(principal.GetUserId(), lemmaId, ct);
         return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
-    
+
     private static async Task<Results<Ok<LemmaResponse[]>, NotFound>> Query
     (
         string form,
@@ -147,7 +137,7 @@ public static class LexiconEndpoints
 
         return TypedResults.Ok(entries);
     }
-    
+
     private static async Task<IResult> UploadFile
     (
         IFormFile? file,
@@ -185,13 +175,15 @@ public static class LexiconEndpoints
                 normalizedText,
                 ct);
 
-            return TypedResults.Ok(new UploadFileResponse(
-                created.Id,
-                success.FileName,
-                created.DisplayName,
-                normalizedText.Length,
-                file.Length,
-                analysis));
+            return TypedResults.Ok(new UploadFileResponse
+            {
+                FileId = created.Id,
+                OriginalFileName = success.FileName,
+                DisplayName = created.DisplayName,
+                CharacterCount = normalizedText.Length,
+                FileSizeBytes = file.Length,
+                Analysis = analysis
+            });
         }
 
         if (result is PlainTextFileResult.TooLarge)
@@ -201,19 +193,69 @@ public static class LexiconEndpoints
 
         return TypedResults.BadRequest();
     }
-    
-    private static Task GetFiles(HttpContext context)
+
+    private static async Task<Ok<FileMetadataResponse[]>> GetFiles
+    (
+        ClaimsPrincipal principal,
+        IUploadedFileRepository uploadedFiles,
+        CancellationToken ct
+    )
     {
-        throw new NotImplementedException();
-    }
-    
-    private static Task GetFile(HttpContext context)
-    {
-        throw new NotImplementedException();
+        var userId = principal.GetUserId();
+        var files = await uploadedFiles.GetByUserIdAsync(userId, ct);
+
+        var result = files
+            .Select(f => new FileMetadataResponse
+            {
+                Id = f.Id,
+                OriginalFileName = f.OriginalFileName,
+                DisplayName = f.DisplayName,
+                FileSizeBytes = f.FileSizeBytes,
+                UploadedAt = f.UploadedAt
+            })
+            .ToArray();
+
+        return TypedResults.Ok(result);
     }
 
-    private static Task DeleteFile(HttpContext context)
+    private static async Task<Results<Ok<UploadFileResponse>, NotFound>> GetFile
+    (
+        int fileId,
+        ClaimsPrincipal principal,
+        IUploadedFileRepository uploadedFiles,
+        ILexiconService lexicon,
+        CancellationToken ct
+    )
     {
-        throw new NotImplementedException();
+        var userId = principal.GetUserId();
+        var result = await uploadedFiles.GetWithContentAsync(fileId, userId, ct);
+
+        if (result is null)
+            return TypedResults.NotFound();
+
+        var analysis = await lexicon.AnalyseAsync(result.Value.Content, ct);
+
+        return TypedResults.Ok(new UploadFileResponse
+        {
+            FileId = result.Value.File.Id,
+            OriginalFileName = result.Value.File.OriginalFileName,
+            DisplayName = result.Value.File.DisplayName,
+            CharacterCount = result.Value.Content.Length,
+            FileSizeBytes = result.Value.File.FileSizeBytes,
+            Analysis = analysis
+        });
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DeleteFile
+    (
+        int fileId,
+        ClaimsPrincipal principal,
+        IUploadedFileRepository uploadedFiles,
+        CancellationToken ct
+    )
+    {
+        var userId = principal.GetUserId();
+        var deleted = await uploadedFiles.DeleteAsync(fileId, userId, ct);
+        return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 }
