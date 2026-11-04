@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using Microsoft.Extensions.Options;
 
@@ -92,40 +93,32 @@ public sealed class FileService(IOptions<FileUploadOptions> options) : IFileServ
         var name = Path.GetFileName(fileName.Replace('\\', '/').Trim());
         var filtered = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
 
-        if (filtered.Length == 0 || filtered.All(c => c == '.'))
+        if (string.IsNullOrWhiteSpace(filtered) || filtered.All(c => c == '.'))
             return null;
 
-        return filtered.Length > MaxFileNameLength
-            ? filtered[..MaxFileNameLength]
+        return filtered.Take(MaxFileNameLength).ToArray() is { Length: var len } chars
+            ? new string(chars, 0, len)
             : filtered;
     }
 
     private bool IsAllowedType(string fileName, string? contentType)
     {
-        var mediaType = contentType?.Split(';', 2)[0].Trim();
+        var mediaType = contentType?.Split(';', StringSplitOptions.RemoveEmptyEntries)[0].Trim();
 
-        var contentTypeAllowed = _options.AllowedContentTypes.Any(
-            allowed => string.Equals(allowed, mediaType, StringComparison.OrdinalIgnoreCase));
+        var contentTypeAllowed = _options.AllowedContentTypes
+            .Any(allowed => string.Equals(allowed, mediaType, StringComparison.OrdinalIgnoreCase));
 
         var extension = Path.GetExtension(fileName);
-        var extensionAllowed = _options.AllowedExtensions.Any(
-            allowed => string.Equals(allowed, extension, StringComparison.OrdinalIgnoreCase));
+        var extensionAllowed = _options.AllowedExtensions
+            .Any(allowed => string.Equals(allowed, extension, StringComparison.OrdinalIgnoreCase));
 
         return contentTypeAllowed || extensionAllowed;
     }
 
     private static bool ContainsInvalidCharacters(string text)
     {
-        foreach (var c in text)
-        {
-            if (c is '\t' or '\n' or '\r')
-                continue;
-
-            var category = char.GetUnicodeCategory(c);
-            if (category is UnicodeCategory.Control or UnicodeCategory.Format)
-                return true;
-        }
-
-        return false;
+        return text.Any(c =>
+            c is not '\t' and not '\n' and not '\r' &&
+            char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format);
     }
 }
