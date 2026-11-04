@@ -8,6 +8,17 @@ namespace GreekReaderAPI.Data;
 
 public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileRepository
 {
+    private sealed record FileWithContent
+    {
+        public long Id { get; init; }
+        public long UserId { get; init; }
+        public string DisplayName { get; init; } = "";
+        public string OriginalFileName { get; init; } = "";
+        public long FileSizeBytes { get; init; }
+        public DateTimeOffset UploadedAt { get; init; }
+        public byte[] ContentCompressed { get; init; } = [];
+    }
+
     private static byte[] Compress(string text)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
@@ -77,13 +88,13 @@ public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileR
                 new { UserId = userId },
                 cancellationToken: ct));
 
-        return results.ToArray();
+        return [.. results];
     }
 
     public async Task<(UploadedFile File, string Content)?> GetWithContentAsync(long fileId, long userId, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var result = await conn.QuerySingleOrDefaultAsync<(UploadedFile File, byte[] ContentCompressed)>(
+        var result = await conn.QuerySingleOrDefaultAsync<FileWithContent>(
             new CommandDefinition(
                 """
                 SELECT 
@@ -97,11 +108,20 @@ public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileR
                 new { FileId = fileId, UserId = userId },
                 cancellationToken: ct));
 
-        if (result.File == default)
+        if (result is null)
             return null;
 
         var content = Decompress(result.ContentCompressed);
-        return (result.File, content);
+        var file = new UploadedFile
+        {
+            Id = result.Id,
+            UserId = result.UserId,
+            DisplayName = result.DisplayName,
+            OriginalFileName = result.OriginalFileName,
+            FileSizeBytes = result.FileSizeBytes,
+            UploadedAt = result.UploadedAt
+        };
+        return (file, content);
     }
 
     public async Task<bool> UpdateDisplayNameAsync(long fileId, long userId, string displayName, CancellationToken ct = default)

@@ -6,6 +6,7 @@ using GreekReaderAPI.Security;
 using GreekReaderAPI.Services;
 using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace GreekReaderAPI.Endpoints;
 
@@ -50,11 +51,19 @@ public static class LexiconEndpoints
         files.MapGet("", GetFiles)
             .Produces<FileMetadataResponse[]>()
             .Produces(StatusCodes.Status401Unauthorized);
-        files.MapGet("/{fileId:int}", GetFile)
+        files.MapGet("/by-id", GetFile)
             .Produces<UploadFileResponse>()
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
-        files.MapDelete("/{fileId:int}", DeleteFile)
+        files.MapGet("/{fileId:long}", GetFileByPath)
+            .Produces<UploadFileResponse>()
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+        files.MapDelete("/by-id", DeleteFile)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+        files.MapDelete("/{fileId:long}", DeleteFileByPath)
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
@@ -157,41 +166,42 @@ public static class LexiconEndpoints
         var result = await files.ReadPlainTextAsync(
             stream, file.FileName, file.ContentType, file.Length, ct);
 
-        if (result is PlainTextFileResult.Success success)
+        switch (result)
         {
-            var normalizedText = Api.Normalise(success.Text);
-            var analysis = await lexicon.AnalyseAsync(normalizedText, ct);
-            var displayName = FileNameNormalizer.Normalize(success.FileName);
-            var userId = principal.GetUserId();
-
-            var created = await uploadedFiles.CreateAsync(
-                new UploadedFile
-                {
-                    UserId = userId,
-                    DisplayName = displayName,
-                    OriginalFileName = success.FileName,
-                    FileSizeBytes = file.Length
-                },
-                normalizedText,
-                ct);
-
-            return TypedResults.Ok(new UploadFileResponse
+            case PlainTextFileResult.Success success:
             {
-                FileId = created.Id,
-                OriginalFileName = success.FileName,
-                DisplayName = created.DisplayName,
-                CharacterCount = normalizedText.Length,
-                FileSizeBytes = file.Length,
-                Analysis = analysis
-            });
+                var analysis = await lexicon.AnalyseAsync(success.Text, ct);
+                var displayName = FileNameNormalizer.Normalize(success.FileName);
+                var userId = principal.GetUserId();
+
+                var created = await uploadedFiles.CreateAsync(
+                    new UploadedFile
+                    {
+                        UserId = userId,
+                        DisplayName = displayName,
+                        OriginalFileName = success.FileName,
+                        FileSizeBytes = file.Length
+                    },
+                    success.Text,
+                    ct);
+
+                return TypedResults.Ok(new UploadFileResponse
+                {
+                    FileId = created.Id,
+                    OriginalFileName = success.FileName,
+                    DisplayName = created.DisplayName,
+                    CharacterCount = success.Text.Length,
+                    FileSizeBytes = file.Length,
+                    Analysis = analysis
+                });
+            }
+            case PlainTextFileResult.TooLarge:
+                return TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            case PlainTextFileResult.Unsupported:
+                return TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            default:
+                return TypedResults.BadRequest();
         }
-
-        if (result is PlainTextFileResult.TooLarge)
-            return TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge);
-        if (result is PlainTextFileResult.Unsupported)
-            return TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType);
-
-        return TypedResults.BadRequest();
     }
 
     private static async Task<Ok<FileMetadataResponse[]>> GetFiles
@@ -220,7 +230,7 @@ public static class LexiconEndpoints
 
     private static async Task<Results<Ok<UploadFileResponse>, NotFound>> GetFile
     (
-        int fileId,
+        [FromQuery] long fileId,
         ClaimsPrincipal principal,
         IUploadedFileRepository uploadedFiles,
         ILexiconService lexicon,
@@ -246,9 +256,18 @@ public static class LexiconEndpoints
         });
     }
 
+    private static Task<Results<Ok<UploadFileResponse>, NotFound>> GetFileByPath
+    (
+        long fileId,
+        ClaimsPrincipal principal,
+        IUploadedFileRepository uploadedFiles,
+        ILexiconService lexicon,
+        CancellationToken ct
+    ) => GetFile(fileId, principal, uploadedFiles, lexicon, ct);
+
     private static async Task<Results<NoContent, NotFound>> DeleteFile
     (
-        int fileId,
+        [FromQuery] long fileId,
         ClaimsPrincipal principal,
         IUploadedFileRepository uploadedFiles,
         CancellationToken ct
@@ -258,4 +277,12 @@ public static class LexiconEndpoints
         var deleted = await uploadedFiles.DeleteAsync(fileId, userId, ct);
         return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
+
+    private static Task<Results<NoContent, NotFound>> DeleteFileByPath
+    (
+        long fileId,
+        ClaimsPrincipal principal,
+        IUploadedFileRepository uploadedFiles,
+        CancellationToken ct
+    ) => DeleteFile(fileId, principal, uploadedFiles, ct);
 }
