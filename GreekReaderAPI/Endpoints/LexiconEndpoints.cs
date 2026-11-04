@@ -4,12 +4,15 @@ using GreekReaderAPI.Models;
 using GreekReaderAPI.Security;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace GreekReaderAPI.Endpoints;
 
 public sealed record AnalyseRequest(
     [property: Required] string Text
 );
+
+public sealed record UploadFileResponse(string FileName, int CharacterCount);
 
 public sealed record CreateUserLemmaRequest(
     [property: Required] int LemmaId,
@@ -44,6 +47,20 @@ public static class LexiconEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
+
+        var files = app.MapGroup("/files").RequireAuthorization();
+        files.MapPost("", UploadFile)
+            .RequireRateLimiting("file-upload")
+            .Produces<UploadFileResponse>()
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .Produces(StatusCodes.Status429TooManyRequests);
+        files.MapGet("", GetFiles);
+        files.MapGet("/{fileId:int}", GetFile);
+        files.MapDelete("/{fileId:int}", DeleteFile);
+        
         return app;
     }
 
@@ -121,5 +138,48 @@ public static class LexiconEndpoints
             return TypedResults.NotFound();
 
         return TypedResults.Ok(entries);
+    }
+    
+    private static async Task<IResult> UploadFile
+    (
+        IFormFile? file,
+        HttpContext context,
+        IFileService files,
+        CancellationToken ct
+    )
+    {
+        if (file is null || context.Request.Form.Files.Count != 1)
+            return TypedResults.BadRequest();
+
+        await using var stream = file.OpenReadStream();
+
+        var result = await files.ReadPlainTextAsync(
+            stream, file.FileName, file.ContentType, file.Length, ct);
+
+        return result switch
+        {
+            PlainTextFileResult.Success success =>
+                TypedResults.Ok(new UploadFileResponse(success.FileName, success.Text.Length)),
+            PlainTextFileResult.TooLarge =>
+                TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge),
+            PlainTextFileResult.Unsupported =>
+                TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType),
+            _ => TypedResults.BadRequest()
+        };
+    }
+    
+    private static Task GetFiles(HttpContext context)
+    {
+        throw new NotImplementedException();
+    }
+    
+    private static Task GetFile(HttpContext context)
+    {
+        throw new NotImplementedException();
+    }
+
+    private static Task DeleteFile(HttpContext context)
+    {
+        throw new NotImplementedException();
     }
 }

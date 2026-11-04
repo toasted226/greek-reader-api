@@ -6,6 +6,7 @@ using GreekReaderAPI.Email;
 using GreekReaderAPI.Endpoints;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http.Features;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,12 @@ if (builder.Environment.IsDevelopment())
 builder.Configuration.AddEnvironmentVariables();
 
 var connString = builder.Configuration.GetConnectionString("Postgres")!;
+
+var fileUploadOptions = builder.Configuration
+    .GetSection(FileUploadOptions.SectionName)
+    .Get<FileUploadOptions>() ?? new FileUploadOptions();
+
+var maxRequestBodyBytes = fileUploadOptions.MaxFileBytes + 64 * 1024;
 
 if (args.Contains("--reset") && builder.Environment.IsDevelopment())
 {
@@ -52,13 +59,29 @@ builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILexiconService, LexiconService>();
+builder.Services.AddScoped<IFileService, FileService>();
+
+builder.Services.Configure<FileUploadOptions>(
+    builder.Configuration.GetSection(FileUploadOptions.SectionName));
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.BufferBody = false;
+    options.MultipartBodyLengthLimit = maxRequestBodyBytes;
+    options.MemoryBufferThreshold = (int)Math.Min(maxRequestBodyBytes, int.MaxValue);
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxRequestBodyBytes;
+});
 
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddSingleton<IEmailSender, MailKitEmailSender>();
-    //builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
+    //builder.Services.AddSingleton<IEmailSender, MailKitEmailSender>();
+    builder.Services.AddSingleton<IEmailSender, ConsoleEmailSender>();
 }
 else
 {
@@ -69,7 +92,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        var frontendBaseUrl = builder.Configuration["App:FrontendBaseUrl"] ?? "http://localhost:4200";
+
+        policy.WithOrigins(frontendBaseUrl.TrimEnd('/'))
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -82,8 +107,12 @@ builder.Services
     {
         o.Cookie.Name = "session";
         o.Cookie.HttpOnly = true;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        o.Cookie.SameSite = SameSiteMode.None;
+        o.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        o.Cookie.SameSite = builder.Environment.IsDevelopment()
+            ? SameSiteMode.Lax
+            : SameSiteMode.None;
         o.ExpireTimeSpan = TimeSpan.FromDays(1);
         o.SlidingExpiration = true;
 
@@ -100,6 +129,25 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "greekreader.antiforgery";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    }
+    else
+    {
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    }
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -109,7 +157,7 @@ builder.Services.AddRateLimiter(options =>
             ? Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds))
             : 0;
 
-        ctx.HttpContext.Response.Headers["Retry-After"] = retryAfter.ToString();
+        ctx.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString();
         await ctx.HttpContext.Response.WriteAsJsonAsync(
             new
             {
@@ -128,6 +176,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("file-upload", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 var app = builder.Build();
@@ -136,6 +194,7 @@ app.UseCors("AllowAngular");
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 if (args.Contains("--import"))
 {
@@ -156,7 +215,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "GreekReaderAPI v1"));
 }
 
-app.MapGet("/", () => new { Message = "Hello, world!" });
+app.MapGet("/", () => new { Message = "API online." });
 app.MapAuthEndpoints();
 app.MapLexiconEndpoints();
 

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using GreekReaderAPI.Data;
 using GreekReaderAPI.Security;
 using GreekReaderAPI.Services;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -21,6 +22,7 @@ public sealed record VerifyOtpRequest(
 );
 
 public sealed record MeResponse(long Id, string Email, DateTimeOffset? CreatedAt);
+public sealed record CsrfTokenResponse(string Token);
 
 public static class AuthEndpoints
 {
@@ -40,6 +42,10 @@ public static class AuthEndpoints
         group.MapGet("/me", Me)
             .RequireAuthorization()
             .Produces<MeResponse>()
+            .Produces(StatusCodes.Status401Unauthorized);
+        group.MapGet("/csrf", GetCsrfToken)
+            .RequireAuthorization()
+            .Produces<CsrfTokenResponse>()
             .Produces(StatusCodes.Status401Unauthorized);
         group.MapDelete("/me", DeleteMe)
             .RequireAuthorization();
@@ -80,6 +86,21 @@ public static class AuthEndpoints
             return TypedResults.Unauthorized();
 
         return TypedResults.Ok(new MeResponse(user.Id, user.Email, user.CreatedAt));
+    }
+
+    private static IResult GetCsrfToken
+    (
+        HttpContext context,
+        IAntiforgery antiforgery
+    )
+    {
+        var tokens = antiforgery.GetAndStoreTokens(context);
+        if (tokens.RequestToken is null)
+            return Results.Problem("Unable to generate an antiforgery token.");
+
+        context.Response.Headers.CacheControl = "no-store";
+
+        return Results.Ok(new CsrfTokenResponse(tokens.RequestToken));
     }
 
     private static async Task<IResult> RequestSignIn
