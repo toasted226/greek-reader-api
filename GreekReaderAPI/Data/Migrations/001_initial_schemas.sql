@@ -2,9 +2,11 @@ CREATE EXTENSION IF NOT EXISTS citext;
 
 create table users
 (
-    id         bigint generated always as identity primary key,
-    email      citext      not null,
-    created_at timestamptz not null default now()
+    id                           bigint generated always as identity primary key,
+    email                        citext      not null,
+    created_at                   timestamptz not null default now(),
+    uploaded_file_count          integer     not null default 0 check (uploaded_file_count >= 0),
+    uploaded_file_text_bytes     bigint      not null default 0 check (uploaded_file_text_bytes >= 0)
 );
 
 create unique index users_email_lower_idx on users (lower(email));
@@ -76,6 +78,7 @@ create table uploaded_files
     display_name       text        not null,
     original_file_name text        not null,
     file_size_bytes    bigint      not null,
+    text_size_bytes    bigint      not null check (text_size_bytes >= 0),
     uploaded_at        timestamptz not null default now()
 );
 

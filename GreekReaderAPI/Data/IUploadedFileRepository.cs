@@ -4,7 +4,7 @@ namespace GreekReaderAPI.Data;
 
 public interface IUploadedFileRepository
 {
-    Task<UploadedFile> CreateAsync(UploadedFile file, string content, CancellationToken ct = default);
+    Task<UploadedFileCreateResult> CreateAsync(UploadedFile file, string content, CancellationToken ct = default);
 
     Task<UploadedFile[]> GetByUserIdAsync(long userId, CancellationToken ct = default);
 

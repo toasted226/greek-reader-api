@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using GreekReader.Interop;
 using GreekReaderAPI.Data;
 using GreekReaderAPI.Models;
@@ -7,6 +8,7 @@ using GreekReaderAPI.Services;
 using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace GreekReaderAPI.Endpoints;
 
@@ -45,7 +47,8 @@ public static class LexiconEndpoints
             .Produces<UploadFileResponse>()
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
-            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")
             .Produces(StatusCodes.Status415UnsupportedMediaType)
             .Produces(StatusCodes.Status429TooManyRequests);
         files.MapGet("", GetFiles)
@@ -152,6 +155,7 @@ public static class LexiconEndpoints
         IFormFile? file,
         HttpContext context,
         IFileService files,
+        IOptions<FileUploadOptions> uploadOptions,
         ILexiconService lexicon,
         IUploadedFileRepository uploadedFiles,
         ClaimsPrincipal principal,
@@ -174,16 +178,29 @@ public static class LexiconEndpoints
                 var displayName = FileNameNormalizer.Normalize(success.FileName);
                 var userId = principal.GetUserId();
 
-                var created = await uploadedFiles.CreateAsync(
+                var creation = await uploadedFiles.CreateAsync(
                     new UploadedFile
                     {
                         UserId = userId,
                         DisplayName = displayName,
                         OriginalFileName = success.FileName,
-                        FileSizeBytes = file.Length
+                        FileSizeBytes = file.Length,
+                        TextSizeBytes = Encoding.UTF8.GetByteCount(success.Text)
                     },
                     success.Text,
                     ct);
+
+                if (creation is UploadedFileCreateResult.LimitExceeded exceeded)
+                {
+                    return exceeded.Limit switch
+                    {
+                        FileUploadLimitExceeded.FileCount => TypedResults.Conflict(),
+                        FileUploadLimitExceeded.TextBytes => TextQuotaExceeded(uploadOptions.Value.MaxTextBytesPerUser),
+                        _ => TypedResults.StatusCode(StatusCodes.Status500InternalServerError)
+                    };
+                }
+
+                var created = ((UploadedFileCreateResult.Created)creation).File;
 
                 return TypedResults.Ok(new UploadFileResponse
                 {
@@ -196,12 +213,38 @@ public static class LexiconEndpoints
                 });
             }
             case PlainTextFileResult.TooLarge:
-                return TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge);
+                return FileTooLarge(uploadOptions.Value.MaxFileBytes);
             case PlainTextFileResult.Unsupported:
                 return TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType);
             default:
                 return TypedResults.BadRequest();
         }
+    }
+
+    private static IResult FileTooLarge(long maxFileBytes) => Results.Problem(
+        statusCode: StatusCodes.Status413PayloadTooLarge,
+        title: "File too large",
+        detail: $"This file exceeds the per-file upload limit of {FormatByteLimit(maxFileBytes)}. Choose a smaller file.",
+        extensions: new Dictionary<string, object?> { ["code"] = "file_too_large" });
+
+    private static IResult TextQuotaExceeded(long maxTextBytes) => Results.Problem(
+        statusCode: StatusCodes.Status413PayloadTooLarge,
+        title: "Your file storage limit has been reached",
+        detail: $"This upload would put your stored file text over the {FormatByteLimit(maxTextBytes)} limit. Delete one or more uploaded files before trying again.",
+        extensions: new Dictionary<string, object?> { ["code"] = "user_text_storage_limit_exceeded" });
+
+    private static string FormatByteLimit(long bytes)
+    {
+        const long bytesPerKiB = 1024;
+        const long bytesPerMiB = 1024 * bytesPerKiB;
+
+        if (bytes >= bytesPerMiB && bytes % bytesPerMiB == 0)
+            return $"{bytes / bytesPerMiB} MiB";
+
+        if (bytes >= bytesPerKiB)
+            return $"{bytes / (double)bytesPerKiB:0.#} KiB";
+
+        return $"{bytes} bytes";
     }
 
     private static async Task<Ok<FileMetadataResponse[]>> GetFiles

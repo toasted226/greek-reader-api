@@ -2,12 +2,22 @@ using System.IO.Compression;
 using System.Text;
 using Dapper;
 using GreekReaderAPI.Models;
+using GreekReaderAPI.Services;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace GreekReaderAPI.Data;
 
-public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileRepository
+public sealed class UploadedFileRepository(
+    NpgsqlDataSource db,
+    IOptions<FileUploadOptions> options) : IUploadedFileRepository
 {
+    private sealed record UserFileUsage
+    {
+        public int FileCount { get; init; }
+        public long TextBytes { get; init; }
+    }
+
     private sealed record FileWithContent
     {
         public long Id { get; init; }
@@ -38,24 +48,60 @@ public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileR
         return reader.ReadToEnd();
     }
 
-    public async Task<UploadedFile> CreateAsync(UploadedFile file, string content, CancellationToken ct = default)
+    public async Task<UploadedFileCreateResult> CreateAsync(UploadedFile file, string content, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
+        var usage = await conn.QuerySingleOrDefaultAsync<UserFileUsage>(
+            new CommandDefinition(
+                """
+                SELECT uploaded_file_count AS FileCount,
+                       uploaded_file_text_bytes AS TextBytes
+                FROM users
+                WHERE id = @UserId
+                FOR UPDATE
+                """,
+                new { file.UserId },
+                transaction: tx,
+                cancellationToken: ct));
+
+        if (usage is null)
+            throw new InvalidOperationException($"User {file.UserId} does not exist.");
+
+        var limits = options.Value;
+        if (usage.FileCount >= limits.MaxFilesPerUser)
+            return new UploadedFileCreateResult.LimitExceeded(FileUploadLimitExceeded.FileCount);
+
+        if (file.TextSizeBytes > limits.MaxTextBytesPerUser - usage.TextBytes)
+            return new UploadedFileCreateResult.LimitExceeded(FileUploadLimitExceeded.TextBytes);
+
+        await conn.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE users
+                SET uploaded_file_count = uploaded_file_count + 1,
+                    uploaded_file_text_bytes = uploaded_file_text_bytes + @TextSizeBytes
+                WHERE id = @UserId
+                """,
+                new { file.UserId, file.TextSizeBytes },
+                transaction: tx,
+                cancellationToken: ct));
+
         var created = await conn.QuerySingleAsync<UploadedFile>(
             new CommandDefinition(
                 """
-                INSERT INTO uploaded_files (user_id, display_name, original_file_name, file_size_bytes)
-                VALUES (@UserId, @DisplayName, @OriginalFileName, @FileSizeBytes)
-                RETURNING id, user_id AS UserId, display_name AS DisplayName, original_file_name AS OriginalFileName, file_size_bytes AS FileSizeBytes, uploaded_at AS UploadedAt
+                INSERT INTO uploaded_files (user_id, display_name, original_file_name, file_size_bytes, text_size_bytes)
+                VALUES (@UserId, @DisplayName, @OriginalFileName, @FileSizeBytes, @TextSizeBytes)
+                RETURNING id, user_id AS UserId, display_name AS DisplayName, original_file_name AS OriginalFileName, file_size_bytes AS FileSizeBytes, text_size_bytes AS TextSizeBytes, uploaded_at AS UploadedAt
                 """,
                 new
                 {
                     UserId = file.UserId,
                     DisplayName = file.DisplayName,
                     OriginalFileName = file.OriginalFileName,
-                    FileSizeBytes = file.FileSizeBytes
+                    FileSizeBytes = file.FileSizeBytes,
+                    TextSizeBytes = file.TextSizeBytes
                 },
                 transaction: tx,
                 cancellationToken: ct));
@@ -71,7 +117,7 @@ public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileR
                 cancellationToken: ct));
 
         await tx.CommitAsync(ct);
-        return created;
+        return new UploadedFileCreateResult.Created(created);
     }
 
     public async Task<UploadedFile[]> GetByUserIdAsync(long userId, CancellationToken ct = default)
@@ -143,15 +189,50 @@ public sealed class UploadedFileRepository(NpgsqlDataSource db) : IUploadedFileR
     public async Task<bool> DeleteAsync(long fileId, long userId, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var rows = await conn.ExecuteAsync(
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        var userExists = await conn.QuerySingleOrDefaultAsync<int?>(
+            new CommandDefinition(
+                """
+                SELECT 1
+                FROM users
+                WHERE id = @UserId
+                FOR UPDATE
+                """,
+                new { UserId = userId },
+                transaction: tx,
+                cancellationToken: ct));
+
+        if (userExists is null)
+            return false;
+
+        var textSizeBytes = await conn.QuerySingleOrDefaultAsync<long?>(
             new CommandDefinition(
                 """
                 DELETE FROM uploaded_files
                 WHERE id = @FileId AND user_id = @UserId
+                RETURNING text_size_bytes
                 """,
                 new { FileId = fileId, UserId = userId },
+                transaction: tx,
                 cancellationToken: ct));
 
-        return rows > 0;
+        if (textSizeBytes is null)
+            return false;
+
+        await conn.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE users
+                SET uploaded_file_count = uploaded_file_count - 1,
+                    uploaded_file_text_bytes = uploaded_file_text_bytes - @TextSizeBytes
+                WHERE id = @UserId
+                """,
+                new { UserId = userId, TextSizeBytes = textSizeBytes.Value },
+                transaction: tx,
+                cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return true;
     }
 }
