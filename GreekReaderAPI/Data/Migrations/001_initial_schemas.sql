@@ -1,5 +1,4 @@
-CREATE
-EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS citext;
 
 create table users
 (
@@ -86,6 +85,8 @@ create table uploaded_file_contents
     file_id            bigint not null unique references uploaded_files (id) on delete cascade,
     content_compressed bytea  not null
 );
+
+alter table uploaded_file_contents alter column content_compressed set storage external;
 
 create index uploaded_files_user_id_idx on uploaded_files (user_id);
 create index uploaded_files_uploaded_at_idx on uploaded_files (uploaded_at desc);
