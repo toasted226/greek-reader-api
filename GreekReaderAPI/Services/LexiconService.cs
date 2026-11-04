@@ -50,6 +50,15 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
 
         var byForm = await lexicon.GetByFormsAsync(candidates, ct);
 
+        return
+        [
+            .. tokens.Select(t => new AnalyseResponse(
+                    new TokenResponse(t.Text, t.Start, t.IsWord),
+                    (t.IsWord ? Resolve(t.Text) : []).Select(ToLemmaResponse).ToArray()
+                )
+            )
+        ];
+
         LexiconLemma[] Resolve(string rtext)
         {
             foreach (var c in Candidates(rtext))
@@ -57,12 +66,6 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
                     return hits;
             return [];
         }
-
-        return tokens.Select(t => new AnalyseResponse(
-                new TokenResponse(t.Text, t.Start, t.IsWord),
-                (t.IsWord ? Resolve(t.Text) : []).Select(ToLemmaResponse).ToArray()
-            )
-        ).ToArray();
     }
 
     public async Task<UserLemmaResponse[]> GetUserLemmasAsync(long userId, CancellationToken ct = default)

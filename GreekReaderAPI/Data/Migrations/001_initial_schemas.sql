@@ -1,9 +1,10 @@
-CREATE EXTENSION IF NOT EXISTS citext;
+CREATE
+EXTENSION IF NOT EXISTS citext;
 
 create table users
 (
     id         bigint generated always as identity primary key,
-    email      citext        not null,
+    email      citext      not null,
     created_at timestamptz not null default now()
 );
 
@@ -20,14 +21,14 @@ create table login_tokens
 
 create unique index login_tokens_user_id_idx on login_tokens (user_id);
 
-create table otp_codes 
+create table otp_codes
 (
-    id uuid primary key default gen_random_uuid(),
-    user_id bigint not null references users (id) on delete cascade,
-    code_hash bytea not null,
+    id         uuid primary key     default gen_random_uuid(),
+    user_id    bigint      not null references users (id) on delete cascade,
+    code_hash  bytea       not null,
     expires_at timestamptz not null,
-    attempts int not null default 0,
-    used_at timestamptz null,
+    attempts   int         not null default 0,
+    used_at    timestamptz null,
     created_at timestamptz not null default now()
 );
 
@@ -52,19 +53,39 @@ create table examples
 create table forms
 (
     id              bigint generated always as identity primary key,
-    lemma_id        int    not null references lemmas (id) on delete cascade,
-    form            text   not null, -- as written, accents intact, for display
-    form_normalized text   not null, -- lowercased, accents stripped, for lookup
+    lemma_id        int  not null references lemmas (id) on delete cascade,
+    form            text not null, -- as written, accents intact, for display
+    form_normalized text not null, -- lowercased, accents stripped, for lookup
     features        text[] not null default '{}'
 );
 
-create table user_lemmas 
+create table user_lemmas
 (
-    id int generated always as identity primary key,
-    user_id bigint not null references users (id) on delete cascade,
-    lemma_id int not null references lemmas (id) on delete cascade,
-    context_sentence text not null
+    id               int generated always as identity primary key,
+    user_id          bigint not null references users (id) on delete cascade,
+    lemma_id         int    not null references lemmas (id) on delete cascade,
+    context_sentence text   not null
 );
 
 create index forms_form_normalized_idx on forms (form_normalized);
 create index forms_lemma_id_idx on forms (lemma_id);
+
+create table uploaded_files
+(
+    id                 bigint generated always as identity primary key,
+    user_id            bigint      not null references users (id) on delete cascade,
+    display_name       text        not null,
+    original_file_name text        not null,
+    file_size_bytes    bigint      not null,
+    uploaded_at        timestamptz not null default now()
+);
+
+create table uploaded_file_contents
+(
+    id                 bigint generated always as identity primary key,
+    file_id            bigint not null unique references uploaded_files (id) on delete cascade,
+    content_compressed bytea  not null
+);
+
+create index uploaded_files_user_id_idx on uploaded_files (user_id);
+create index uploaded_files_uploaded_at_idx on uploaded_files (uploaded_at desc);

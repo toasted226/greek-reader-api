@@ -56,6 +56,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ILoginTokenRepository, LoginTokenRepository>();
 builder.Services.AddScoped<ILexiconRepository, LexiconRepository>();
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
+builder.Services.AddScoped<IUploadedFileRepository, UploadedFileRepository>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILexiconService, LexiconService>();

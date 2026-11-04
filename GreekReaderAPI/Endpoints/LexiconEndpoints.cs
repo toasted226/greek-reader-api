@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using GreekReader.Interop;
+using GreekReaderAPI.Data;
 using GreekReaderAPI.Models;
 using GreekReaderAPI.Security;
 using GreekReaderAPI.Services;
+using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace GreekReaderAPI.Endpoints;
 
@@ -12,7 +14,13 @@ public sealed record AnalyseRequest(
     [property: Required] string Text
 );
 
-public sealed record UploadFileResponse(string FileName, int CharacterCount);
+public sealed record UploadFileResponse(
+    long? FileId,
+    string OriginalFileName,
+    string DisplayName,
+    int CharacterCount,
+    long FileSizeBytes,
+    AnalyseResponse[] Analysis);
 
 public sealed record CreateUserLemmaRequest(
     [property: Required] int LemmaId,
@@ -145,6 +153,9 @@ public static class LexiconEndpoints
         IFormFile? file,
         HttpContext context,
         IFileService files,
+        ILexiconService lexicon,
+        IUploadedFileRepository uploadedFiles,
+        ClaimsPrincipal principal,
         CancellationToken ct
     )
     {
@@ -156,16 +167,39 @@ public static class LexiconEndpoints
         var result = await files.ReadPlainTextAsync(
             stream, file.FileName, file.ContentType, file.Length, ct);
 
-        return result switch
+        if (result is PlainTextFileResult.Success success)
         {
-            PlainTextFileResult.Success success =>
-                TypedResults.Ok(new UploadFileResponse(success.FileName, success.Text.Length)),
-            PlainTextFileResult.TooLarge =>
-                TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge),
-            PlainTextFileResult.Unsupported =>
-                TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType),
-            _ => TypedResults.BadRequest()
-        };
+            var normalizedText = Api.Normalise(success.Text);
+            var analysis = await lexicon.AnalyseAsync(normalizedText, ct);
+            var displayName = FileNameNormalizer.Normalize(success.FileName);
+            var userId = principal.GetUserId();
+
+            var created = await uploadedFiles.CreateAsync(
+                new UploadedFile
+                {
+                    UserId = userId,
+                    DisplayName = displayName,
+                    OriginalFileName = success.FileName,
+                    FileSizeBytes = file.Length
+                },
+                normalizedText,
+                ct);
+
+            return TypedResults.Ok(new UploadFileResponse(
+                created.Id,
+                success.FileName,
+                created.DisplayName,
+                normalizedText.Length,
+                file.Length,
+                analysis));
+        }
+
+        if (result is PlainTextFileResult.TooLarge)
+            return TypedResults.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        if (result is PlainTextFileResult.Unsupported)
+            return TypedResults.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+        return TypedResults.BadRequest();
     }
     
     private static Task GetFiles(HttpContext context)
