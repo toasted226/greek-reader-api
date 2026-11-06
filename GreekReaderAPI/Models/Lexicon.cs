@@ -4,7 +4,6 @@ namespace GreekReaderAPI.Models;
 
 public sealed record UserLemmaResponse(
     int Id,
-    long UserId,
     LemmaResponse Lemma,
     string ContextSentence);
 

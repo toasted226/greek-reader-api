@@ -107,5 +107,5 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
         lexicon.DeleteUserLemmaAsync(userId, lemmaId, ct);
 
     private static UserLemmaResponse ToUserLemmaResponse(UserLemma userLemma, LexiconLemma lemma) =>
-        new(userLemma.Id, userLemma.UserId, ToLemmaResponse(lemma), userLemma.ContextSentence);
+        new(userLemma.Id, ToLemmaResponse(lemma), userLemma.ContextSentence);
 }
