@@ -74,10 +74,12 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
         var lemmaEntries = await lexicon.GetAsync([.. userLemmas.Select(l => l.LemmaId).Distinct()], ct);
         var byId = lemmaEntries.ToDictionary(l => l.Id);
 
-        return userLemmas
-            .Where(l => byId.ContainsKey(l.LemmaId))
-            .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
-            .ToArray();
+        return
+        [
+            .. userLemmas
+                .Where(l => byId.ContainsKey(l.LemmaId))
+                .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
+        ];
     }
 
     public async Task<UserLemmaResponse?> GetUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default)

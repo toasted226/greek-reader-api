@@ -66,7 +66,7 @@ public sealed class FileService(IOptions<FileUploadOptions> options) : IFileServ
             string text;
             try
             {
-                text = StrictUtf8.GetString(bytes);
+                text = Api.Canonicalise(StrictUtf8.GetString(bytes));
             }
             catch (DecoderFallbackException)
             {
@@ -118,7 +118,6 @@ public sealed class FileService(IOptions<FileUploadOptions> options) : IFileServ
     private static bool ContainsInvalidCharacters(string text)
     {
         return text.Any(c =>
-            c is not '\t' and not '\n' and not '\r' &&
             char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format);
     }
 }

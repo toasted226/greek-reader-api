@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text;
-using GreekReader.Interop;
 using GreekReaderAPI.Data;
 using GreekReaderAPI.Models;
 using GreekReaderAPI.Security;
