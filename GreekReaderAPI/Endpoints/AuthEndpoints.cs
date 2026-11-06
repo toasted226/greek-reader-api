@@ -12,12 +12,14 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace GreekReaderAPI.Endpoints;
 
 public sealed record SignInRequest(
-    [property: Required, EmailAddress] string Email
+    [property: Required, EmailAddress, StringLength(254)] string Email
 );
 
-public sealed record VerifyRequest(string Token);
+public sealed record VerifyRequest(
+    [property: Required] string Token
+);
 public sealed record VerifyOtpRequest(
-    [property: Required, EmailAddress] string Email,
+    [property: Required, EmailAddress, StringLength(254)] string Email,
     [property: Required] string Code
 );
 

@@ -4,6 +4,7 @@ using DbUp;
 using GreekReaderAPI.Data;
 using GreekReaderAPI.Email;
 using GreekReaderAPI.Endpoints;
+using GreekReaderAPI.ErrorHandling;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Features;
@@ -48,6 +49,9 @@ DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 builder.Services.AddHealthChecks().AddNpgSql();
 builder.Services.AddValidation();
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1; });
 
@@ -190,6 +194,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+app.UseExceptionHandler();
 app.UseRouting();
 app.UseCors("AllowAngular");
 app.UseRateLimiter();
@@ -211,7 +216,6 @@ app.MapHealthChecks("/health");
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseDeveloperExceptionPage();
     app.MapOpenApi();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "GreekReaderAPI v1"));
 }

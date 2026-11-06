@@ -11,8 +11,11 @@ public static class TokenGenerator
         return (Base64UrlTextEncoder.Encode(bytes), SHA256.HashData(bytes));
     }
 
-    public static byte[]? Hash(string raw)
+    public static byte[]? Hash(string? raw)
     {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
         try { return SHA256.HashData(Base64UrlTextEncoder.Decode(raw)); }
         catch (FormatException) { return null; }
     }
