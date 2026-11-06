@@ -51,7 +51,16 @@ DefaultTypeMap.MatchNamesWithUnderscores = true;
 builder.Services.AddHealthChecks().AddNpgSql();
 builder.Services.AddValidation();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        if (context.ProblemDetails is HttpValidationProblemDetails { Errors.Count: > 0 } validation)
+        {
+            context.HttpContext.Items[RequestFailureLogging.ValidationErrorsItemKey] = validation.Errors;
+        }
+    };
+});
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1; });
@@ -225,6 +234,7 @@ app.Logger.LogInformation(
     "Data Protection key ring path: {DataProtectionKeysPath}",
     dataProtectionKeysPath);
 app.UseExceptionHandler();
+app.UseMiddleware<RequestFailureLoggingMiddleware>();
 app.UseRouting();
 app.UseCors("AllowAngular");
 app.UseRateLimiter();
