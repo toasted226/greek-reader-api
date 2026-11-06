@@ -66,8 +66,17 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILexiconService, LexiconService>();
 builder.Services.AddScoped<IFileService, FileService>();
 
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IEmailThrottle, EmailThrottle>();
+
 builder.Services.Configure<FileUploadOptions>(
     builder.Configuration.GetSection(FileUploadOptions.SectionName));
+
+builder.Services.Configure<AnalyseOptions>(
+    builder.Configuration.GetSection(AnalyseOptions.SectionName));
+
+builder.Services.Configure<LexiconOptions>(
+    builder.Configuration.GetSection(LexiconOptions.SectionName));
 
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -166,11 +175,21 @@ builder.Services.AddRateLimiter(options =>
         await ctx.HttpContext.Response.WriteAsJsonAsync(
             new
             {
-                error = "Too many OTP requests. Please try again later.",
+                error = "Too many requests. Please try again later.",
                 retryAfterSeconds = retryAfter
             },
             ct);
     };
+    options.AddPolicy("sign-in-request", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
     options.AddPolicy("otp-request", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",

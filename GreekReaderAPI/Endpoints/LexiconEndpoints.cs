@@ -121,13 +121,24 @@ public static class LexiconEndpoints
         return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
-    private static async Task<Results<Ok<LemmaResponse[]>, NotFound>> Query
+    private static async Task<Results<Ok<LemmaResponse[]>, NotFound, ValidationProblem>> Query
     (
         string form,
+        IOptions<LexiconOptions> options,
         ILexiconService lexicon,
         CancellationToken ct
     )
     {
+        var maxFormLength = options.Value.FormMaxLength;
+
+        if (form.Length > maxFormLength)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["form"] = [$"The field form must be a string with a maximum length of {maxFormLength}."]
+            });
+        }
+
         var entries = await lexicon.QueryAsync(form, ct);
         if (entries.Length == 0)
             return TypedResults.NotFound();
@@ -135,13 +146,24 @@ public static class LexiconEndpoints
         return TypedResults.Ok(entries);
     }
 
-    private static async Task<Results<Ok<AnalyseResponse[]>, NotFound>> Analyse
+    private static async Task<Results<Ok<AnalyseResponse[]>, NotFound, ValidationProblem>> Analyse
     (
         AnalyseRequest req,
+        IOptions<AnalyseOptions> options,
         ILexiconService lexicon,
         CancellationToken ct
     )
     {
+        var maxTextLength = options.Value.MaxTextLength;
+
+        if (req.Text.Length > maxTextLength)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["Text"] = [$"The Text field must be a string with a maximum length of {maxTextLength}."]
+            });
+        }
+
         var entries = await lexicon.AnalyseAsync(req.Text, ct);
         if (entries.Length == 0)
             return TypedResults.NotFound();

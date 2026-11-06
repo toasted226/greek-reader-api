@@ -32,7 +32,8 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/auth");
 
-        group.MapPost("/request", RequestSignIn);
+        group.MapPost("/request", RequestSignIn)
+            .RequireRateLimiting("sign-in-request");
         group.MapPost("/verify", Verify);
         group.MapPost("/logout", Logout)
             .RequireAuthorization();
@@ -146,8 +147,6 @@ public static class AuthEndpoints
                     new AuthenticationProperties { IsPersistent = true }
                 );
                 return Results.NoContent();
-            case VerifyResult.RateLimited:
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             default:
                 return Results.Unauthorized();
         }
@@ -172,8 +171,6 @@ public static class AuthEndpoints
                     new AuthenticationProperties { IsPersistent = true }
                 );
                 return Results.NoContent();
-            case VerifyResult.RateLimited:
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             default:
                 return Results.Unauthorized();
         }

@@ -11,14 +11,14 @@ public abstract record VerifyResult
 {
     public sealed record Success(User User) : VerifyResult;
     public sealed record InvalidOrExpired : VerifyResult;
-    public sealed record RateLimited : VerifyResult;
 }
 
 public sealed class AuthService(
     IUserRepository users,
     ILoginTokenRepository tokens,
     IOtpRepository codes,
-    IEmailSender email
+    IEmailSender email,
+    IEmailThrottle throttle
 ) : IAuthService
 {
     private const int OtpMaxAttempts = 5;
@@ -26,6 +26,10 @@ public sealed class AuthService(
     public async Task RequestSignInAsync(string address, CancellationToken ct)
     {
         var normalisedAddress = address.Trim().ToLowerInvariant();
+
+        if (!throttle.TryAcquire(normalisedAddress))
+            return;
+
         var user = await users.GetByEmailAsync(normalisedAddress, ct)
                    ?? await users.CreateAsync(normalisedAddress, ct);
 
@@ -47,6 +51,10 @@ public sealed class AuthService(
     public async Task RequestOtpSignInAsync(string requestEmail, CancellationToken ct = default)
     {
         var normalisedAddress = requestEmail.Trim().ToLowerInvariant();
+
+        if (!throttle.TryAcquire(normalisedAddress))
+            return;
+
         var user = await users.GetByEmailAsync(normalisedAddress, ct)
                    ?? await users.CreateAsync(normalisedAddress, ct);
 
