@@ -7,6 +7,7 @@ using GreekReaderAPI.Endpoints;
 using GreekReaderAPI.ErrorHandling;
 using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using System.Threading.RateLimiting;
 
@@ -77,6 +78,13 @@ builder.Services.Configure<AnalyseOptions>(
 
 builder.Services.Configure<LexiconOptions>(
     builder.Configuration.GetSection(LexiconOptions.SectionName));
+
+var dataProtectionKeysPath = ResolveDataProtectionKeysPath(builder.Configuration, builder.Environment);
+
+builder.Services
+    .AddDataProtection()
+    .SetApplicationName("GreekReaderAPI")
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
 
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -213,6 +221,9 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+app.Logger.LogInformation(
+    "Data Protection key ring path: {DataProtectionKeysPath}",
+    dataProtectionKeysPath);
 app.UseExceptionHandler();
 app.UseRouting();
 app.UseCors("AllowAngular");
@@ -244,3 +255,48 @@ app.MapAuthEndpoints();
 app.MapLexiconEndpoints();
 
 app.Run();
+return;
+
+static string ResolveDataProtectionKeysPath(
+    IConfiguration configuration,
+    IWebHostEnvironment environment)
+{
+    const string fallbackDirectoryName = ".dataprotection-keys";
+
+    var configuredPath = configuration["DataProtection:KeysPath"];
+    string path;
+
+    if (string.IsNullOrWhiteSpace(configuredPath))
+    {
+        if (!environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                "DataProtection:KeysPath is not configured. Set " +
+                "'DataProtection__KeysPath' to a persistent directory so the " +
+                "Data Protection key ring survives restarts and redeploys. " +
+                "See docs/DATA_PROTECTION.md.");
+        }
+
+        path = Path.Combine(environment.ContentRootPath, fallbackDirectoryName);
+    }
+    else
+    {
+        path = Path.IsPathRooted(configuredPath)
+            ? configuredPath
+            : Path.Combine(environment.ContentRootPath, configuredPath);
+    }
+
+    if (Directory.Exists(path)) return Path.GetFullPath(path);
+    if (OperatingSystem.IsWindows())
+    {
+        Directory.CreateDirectory(path);
+    }
+    else
+    {
+        Directory.CreateDirectory(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    return Path.GetFullPath(path);
+}
