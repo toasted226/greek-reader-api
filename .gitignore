@@ -8,3 +8,4 @@ obj/
 .env
 appsettings.Development.json
 .dataprotection-keys/
+deploy/secrets/

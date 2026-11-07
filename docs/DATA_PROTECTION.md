@@ -24,6 +24,23 @@ absolute path in production.
 
 `appsettings.json` ships with an empty value on purpose: production deployments
 must set the path explicitly, while development gets the local fallback.
+`appsettings.Production.json` sets the path to
+`/var/lib/greekreader/dataprotection-keys`; `DataProtection__KeysPath` still
+overrides it if needed.
+
+## Docker
+
+Mount a persistent named volume (or host bind mount) at the configured path:
+
+```yaml
+volumes:
+  - dataprotection-keys:/var/lib/greekreader/dataprotection-keys
+```
+
+The container user must be able to write to the directory. With a named volume,
+either create the directory in the image with the correct ownership before the
+volume is first initialised, or use an entrypoint that fixes ownership. Do not
+mount the key ring from a temporary filesystem.
 
 ## First-time setup (Linux)
 

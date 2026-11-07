@@ -141,9 +141,9 @@ builder.Services
         o.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
-        o.Cookie.SameSite = builder.Environment.IsDevelopment()
-            ? SameSiteMode.Lax
-            : SameSiteMode.None;
+        // The frontend and API are subdomains of modulrza.app, so requests
+        // between them are same-site and Lax cookies are sent.
+        o.Cookie.SameSite = SameSiteMode.Lax;
         o.ExpireTimeSpan = TimeSpan.FromDays(1);
         o.SlidingExpiration = true;
 
@@ -167,16 +167,12 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
 
-    if (builder.Environment.IsDevelopment())
-    {
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-    }
-    else
-    {
-        options.Cookie.SameSite = SameSiteMode.None;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-    }
+    // The frontend and API are subdomains of modulrza.app, so requests
+    // between them are same-site and Lax cookies are sent.
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
 });
 
 builder.Services.AddRateLimiter(options =>
