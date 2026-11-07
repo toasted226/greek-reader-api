@@ -1,0 +1,19 @@
+# Local full-stack testing over plain HTTP.
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.local.yaml up -d --build
+#
+# Development mode gives HTTP-compatible cookies (Secure=SameAsRequest),
+# console email instead of SMTP, and the localhost frontend origin for CORS.
+# These overrides must not be used on the production host.
+
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      App__BackendBaseUrl: http://localhost:${API_PORT:-5080}
+      App__FrontendBaseUrl: http://localhost:${WEB_PORT:-4000}
+
+  frontend:
+    environment:
+      API_BASE_URL: http://localhost:${API_PORT:-5080}

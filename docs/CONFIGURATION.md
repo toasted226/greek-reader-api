@@ -1,8 +1,9 @@
 # Configuration
 
-This document describes the API configuration for the planned Docker Compose
-deployment. Dockerfiles, Compose files, and the secrets entrypoint are
-intentionally not included yet; they are the next batch.
+This document describes how the API is configured, both when it runs directly
+and when it runs under Docker Compose. The Compose stack lives in this
+repository (`compose.yaml`, `compose.local.yaml`) even though it also builds the
+F# engine and the Angular frontend from their own repositories.
 
 ## Sources and precedence
 
@@ -21,15 +22,22 @@ Environment variables map `__` to `:`. For example,
 | File | Committed | Purpose |
 |---|---|---|
 | `GreekReaderAPI/appsettings.json` | Yes | Environment-agnostic defaults: logging levels, request limits, upload limits |
-| `GreekReaderAPI/appsettings.Development.json` | Yes (currently) | Local development: localhost Postgres, localhost frontend URL, console email sender |
+| `GreekReaderAPI/appsettings.Development.json` | Yes | Local development: localhost Postgres, localhost frontend URL, console email sender |
 | `GreekReaderAPI/appsettings.Production.json` | Yes | Production non-secrets: allowed hosts, public URLs, Data Protection path, JSON console logging |
-| `deploy/secrets/` | No | Real Docker secret files; ignored by git |
-| `deploy/secrets.example/` | Yes | Secret templates and naming contract |
+| `compose.yaml` | Yes | Production stack: database, migrations, API, frontend |
+| `compose.local.yaml` | Yes | Local override for HTTP testing (Development mode, localhost URLs) |
+| `.env.example` | Yes | Template listing every variable the stack expects |
+| `.env` | No | Real values, **including secrets**. Ignored by git; keep it `chmod 600` |
+
+`.env` is the single source of configuration for the whole stack. It sits next
+to `compose.yaml`, so a plain `docker compose` command picks it up
+automatically. If it is moved, pass `--env-file` explicitly; do not duplicate
+the values into the Compose files.
 
 `appsettings.Production.json` deliberately sets `ConnectionStrings:Postgres`,
 `Email:SmtpHost`, and `Email:FromEmail` to empty strings so production cannot
-silently fall back to the localhost/Gmail development defaults. Supply the real
-values through environment variables or Docker secrets.
+silently fall back to the localhost/Gmail development defaults. Compose supplies
+the real values as environment variables from `.env`.
 
 ## Production non-secret settings
 
@@ -42,42 +50,85 @@ values through environment variables or Docker secrets.
 | `Logging:Console:FormatterName` | `json` | Structured logs for Docker |
 | `Email:SmtpPort` / `UseSsl` / `FromName` | `587` / `true` / `Greek Reader` | Non-secret SMTP defaults |
 
-## Required values not in the production file
+## `.env` to container environment mapping
 
-| Environment variable | Secret | Example |
+Compose reads every value below from `.env` and sets the right-hand column on
+the `api` container. `migrate` and `import` receive only the shared block
+(environment, URLs, connection string, Data Protection path); they do not need
+SMTP.
+
+| `.env` variable | Container variable | Notes |
 |---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | No | `Production` |
-| `ASPNETCORE_URLS` | No | `http://+:8080` |
-| `ConnectionStrings__Postgres` | Yes | Built from `postgres_password` (see below) |
-| `Email__SmtpHost` | No | `smtp.postmarkapp.com` |
-| `Email__FromEmail` | No | `no-reply@modulrza.app` |
-| `Email__Username` | Yes (may be empty) | SMTP username |
-| `Email__Password` | Yes | SMTP password |
+| `ASPNETCORE_ENVIRONMENT` | `ASPNETCORE_ENVIRONMENT` | `Production` on the host; the local override uses `Development` |
+| `API_BASE_URL` | `App__BackendBaseUrl`, frontend `API_BASE_URL` | Public API origin |
+| `FRONTEND_BASE_URL` | `App__FrontendBaseUrl` | Public frontend origin; used for CORS and magic links |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` | Part of `ConnectionStrings__Postgres` | Defaults target the `db` service |
+| `POSTGRES_PASSWORD` | Part of `ConnectionStrings__Postgres`, and `POSTGRES_PASSWORD` on `db` | **Secret** |
+| `SMTP_HOST` | `Email__SmtpHost` | |
+| `SMTP_PORT` | `Email__SmtpPort` | |
+| `SMTP_USE_SSL` | `Email__UseSsl` | `true` means STARTTLS |
+| `SMTP_FROM` | `Email__FromEmail` | |
+| `SMTP_FROM_NAME` | `Email__FromName` | |
+| `SMTP_USERNAME` | `Email__Username` | **Secret**; may be empty |
+| `SMTP_PASSWORD` | `Email__Password` | **Secret**; may be empty |
+| `DATA_PROTECTION_KEYS_PATH` | `DataProtection__KeysPath` | Also the volume mount target |
+| `API_BIND` / `API_PORT` | Host port mapping | Published on loopback; the host nginx proxies to it |
+| `WEB_BIND` / `WEB_PORT` | Host port mapping | Published on loopback; the host nginx proxies to it |
+| `ENGINE_CONTEXT` | Build context for the F# project | Path relative to `compose.yaml` |
+| `FRONTEND_CONTEXT` | Build context for the Angular project | Path relative to `compose.yaml` |
 
-## Docker secrets
+The connection string is assembled in `compose.yaml` so there is one place to
+read it:
 
-Docker secrets are files mounted under `/run/secrets`. ASP.NET Core does not read
-that directory natively. The Docker batch will add an entrypoint that:
+```text
+Host=db;Port=5432;Database=greekreader;Username=greekreader;Password=<secret>;Maximum Pool Size=20
+```
 
-1. exports each `/run/secrets/Email__*` file as the matching environment
-   variable;
-2. builds `ConnectionStrings__Postgres` from `/run/secrets/postgres_password`
-   plus the non-secret host, port, database, and user values;
-3. `exec`s the API.
+Because the password is interpolated into a connection string, generate it with
+`openssl rand -hex 32`. That keeps it to `[0-9a-f]`, so it cannot contain a
+delimiter (`;`), a key/value separator (`=`), quotes, or whitespace. Keep every
+`.env` value single-line.
 
-Secret file names:
+Secrets are not given special treatment beyond that: they live in `.env` like
+everything else and are protected by file permissions and by never committing
+the file.
 
-| File | Maps to |
-|---|---|
-| `postgres_password` | `POSTGRES_PASSWORD_FILE` in the database service; source for `ConnectionStrings__Postgres` |
-| `Email__Username` | `Email__Username` |
-| `Email__Password` | `Email__Password` |
+## Running locally
 
-Generate the database password with `openssl rand -hex 32` so it contains no
-connection-string metacharacters (`;`, `=`, quotes). Keep all values single-line;
-the entrypoint strips trailing newlines.
+`compose.local.yaml` layers over the production Compose file:
 
-Do not commit `deploy/secrets/`. Keep it `chmod 600`.
+```bash
+cp .env.example .env        # once; fill in values
+docker compose -f compose.yaml -f compose.local.yaml up -d --build
+```
+
+The override:
+
+- sets `ASPNETCORE_ENVIRONMENT=Development`, so cookies use
+  `Secure=SameAsRequest`, the console email sender replaces SMTP, and
+  OpenAPI/Swagger are mapped;
+- sets `App__FrontendBaseUrl=http://localhost:${WEB_PORT}` so CORS matches;
+- sets the frontend runtime `API_BASE_URL=http://localhost:${API_PORT}`.
+
+The API image is still a Release publish, so resource measurements are
+representative. The default local ports are API `5080` and frontend `4000`;
+both are published on `127.0.0.1` only. Keep `WEB_PORT=4000` for local testing:
+Angular's production host allowlist only accepts `localhost:4000`, so another
+port would make the SSR server reject the browser's Host header.
+
+The local defaults in `.env.example` point at the sibling checkouts:
+
+```env
+ENGINE_CONTEXT=../../fsharp/GreekReader
+FRONTEND_CONTEXT=../../angular/greek-reader
+```
+
+The deployment layout uses:
+
+```env
+ENGINE_CONTEXT=../engine
+FRONTEND_CONTEXT=../../frontend/web
+```
 
 ## Domains, CORS, and cookies
 
@@ -91,10 +142,25 @@ Do not commit `deploy/secrets/`. Keep it `chmod 600`.
 - CORS allows exactly the frontend origin with credentials. The frontend must
   send `credentials: 'include'` and use `X-CSRF-TOKEN` for uploads.
 - `.app` is HSTS-preloaded, so both hostnames must be served over HTTPS. TLS
-  terminates at the reverse proxy.
+  terminates at the host nginx reverse proxy; the containers speak plain HTTP on
+  loopback.
 
 Cookies remain host-only on the API host. Do not set a cookie `Domain` of
 `.modulrza.app`; the frontend does not need to read them.
+
+## Reverse proxy
+
+The API is reachable only through nginx, which must preserve the public `Host`
+header and send the client address:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+The API trusts forwarded headers so the rate limiter partitions on the real
+client IP. This is safe because the API port is published on `127.0.0.1` only.
 
 ## SMTP
 
@@ -106,7 +172,8 @@ counterintuitive; set it deliberately.
 for deliverability.
 
 The sign-in request sends the email synchronously, so the reverse proxy read
-timeout must be longer than the SMTP send timeout.
+timeout must be longer than the SMTP send timeout (MailKit's default is 120 s;
+use `proxy_read_timeout 180s`).
 
 ## Request limits and uploads
 
@@ -124,40 +191,40 @@ Inherited from `appsettings.json`:
 
 `FileUpload:MaxFileBytes` also sets the Kestrel request-body limit
 (`MaxFileBytes + 64 KiB`). The reverse proxy body limit must be at least that
-large.
+large (`client_max_body_size 2m` is sufficient).
 
 ## Database
 
 - Compose service name: `db`
 - Database: `greekreader`
 - User: `greekreader`
-- Keep Postgres on the internal network; do not publish port 5432.
+- Postgres is never published; only the API reaches it on the internal `app`
+  network.
 
-Connection string shape:
-
-```text
-Host=db;Port=5432;Database=greekreader;Username=greekreader;Password=<secret>;Maximum Pool Size=20
-```
-
-Migrations:
+Migrations run as a one-shot Compose service before the API starts:
 
 ```bash
 dotnet GreekReaderAPI.dll --migrate
+# or, in Compose:
+docker compose run --rm migrate
 ```
 
-Run this as a one-shot Compose service before the API starts. `--migrate` exits
-before Data Protection path resolution, so it does not need the key volume.
+`--migrate` exits before Data Protection path resolution, so it does not need
+the key volume.
 
 Lexicon import:
 
 ```bash
 dotnet GreekReaderAPI.dll --import
+# or, in Compose:
+docker compose run --rm import
 ```
 
 First deploy only. It truncates `lemmas`, `forms`, `examples`, **and
 `user_lemmas`**, so re-running it destroys users' saved lemmas. For future
 lexicon updates, use a separate migration rather than re-running `--import`.
-`--import` does require `DataProtection__KeysPath` in Production.
+`--import` does require `DataProtection__KeysPath` in Production and reads the
+bundled `Resources/*.jsonl` files.
 
 ## Data Protection
 
@@ -173,15 +240,9 @@ replica must share the key ring.
 - Do not run multiple API replicas without replacing these with a shared store
   (for example Redis) and sharing the Data Protection key ring.
 
-## Not yet implemented (next batch)
+## Startup validation
 
-- Dockerfile, Compose services, networks, volumes, healthchecks, and log
-  rotation.
-- Entrypoint to export Docker secrets and build the connection string.
-- Forwarded headers for the reverse proxy. **Critical:** the rate limiter
-  partitions on `Connection.RemoteIpAddress`; without forwarded-header trust,
-  every user appears to come from the proxy and shares the 5-per-10-minute
-  sign-in limit.
-- Startup validation for required production settings (database, app URLs,
-  SMTP host/from, `AllowedHosts`).
-- Reverse proxy DNS, TLS, HSTS, and body-size configuration.
+In non-Development environments the API validates its required settings at
+startup and fails fast with a message naming the missing key, instead of
+discovering the problem on the first request. See the deployment batch for the
+exact checks. Values are never echoed into logs.

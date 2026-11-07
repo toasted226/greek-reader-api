@@ -9,6 +9,7 @@ using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
+using System.Net.Mail;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +26,7 @@ if (builder.Environment.IsDevelopment())
 builder.Configuration.AddEnvironmentVariables();
 
 var connString = builder.Configuration.GetConnectionString("Postgres")!;
+ValidateDatabaseConfiguration(builder.Configuration, builder.Environment);
 
 var fileUploadOptions = builder.Configuration
     .GetSection(FileUploadOptions.SectionName)
@@ -248,6 +250,11 @@ if (args.Contains("--import"))
     return;
 }
 
+if (!app.Environment.IsDevelopment())
+{
+    ValidateRuntimeConfiguration(builder.Configuration);
+}
+
 app.MapHealthChecks("/health");
 
 if (app.Environment.IsDevelopment())
@@ -305,4 +312,73 @@ static string ResolveDataProtectionKeysPath(
     }
 
     return Path.GetFullPath(path);
+}
+
+static void ValidateDatabaseConfiguration(
+    IConfiguration configuration,
+    IWebHostEnvironment environment)
+{
+    if (environment.IsDevelopment()) return;
+
+    if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("Postgres")))
+    {
+        throw new InvalidOperationException(
+            "ConnectionStrings:Postgres is not configured. Set " +
+            "'ConnectionStrings__Postgres', normally built by compose.yaml " +
+            "from the DB_* variables and POSTGRES_PASSWORD. " +
+            "See docs/CONFIGURATION.md.");
+    }
+}
+
+static void ValidateRuntimeConfiguration(IConfiguration configuration)
+{
+    var errors = new List<string>();
+
+    var frontendBaseUrl = configuration["App:FrontendBaseUrl"];
+    if (string.IsNullOrWhiteSpace(frontendBaseUrl))
+    {
+        errors.Add("App:FrontendBaseUrl is required (set 'App__FrontendBaseUrl').");
+    }
+    else if (!Uri.TryCreate(frontendBaseUrl, UriKind.Absolute, out var frontendUri)
+             || (frontendUri.Scheme != Uri.UriSchemeHttp
+                 && frontendUri.Scheme != Uri.UriSchemeHttps))
+    {
+        errors.Add("App:FrontendBaseUrl must be an absolute http(s) URL " +
+                   "(set 'App__FrontendBaseUrl').");
+    }
+
+    if (string.IsNullOrWhiteSpace(configuration["Email:SmtpHost"]))
+    {
+        errors.Add("Email:SmtpHost is required (set 'Email__SmtpHost').");
+    }
+
+    var fromEmail = configuration["Email:FromEmail"];
+    if (string.IsNullOrWhiteSpace(fromEmail))
+    {
+        errors.Add("Email:FromEmail is required (set 'Email__FromEmail').");
+    }
+    else if (!MailAddress.TryCreate(fromEmail, out _))
+    {
+        errors.Add("Email:FromEmail is not a valid email address " +
+                   "(set 'Email__FromEmail').");
+    }
+
+    var allowedHosts = configuration["AllowedHosts"];
+    if (string.IsNullOrWhiteSpace(allowedHosts)
+        || allowedHosts
+            .Split(';', StringSplitOptions.RemoveEmptyEntries
+                        | StringSplitOptions.TrimEntries)
+            .Any(host => host == "*"))
+    {
+        errors.Add("AllowedHosts must list explicit hosts and must not be '*'. " +
+                   "Set it in appsettings.Production.json.");
+    }
+
+    if (errors.Count == 0) return;
+
+    throw new InvalidOperationException(
+        "Invalid production configuration:" + Environment.NewLine +
+        string.Join(Environment.NewLine, errors.Select(e => "  - " + e)) +
+        Environment.NewLine +
+        "See docs/CONFIGURATION.md.");
 }
