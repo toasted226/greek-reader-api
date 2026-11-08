@@ -9,6 +9,7 @@ using GreekReaderAPI.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Net.Mail;
 using System.Threading.RateLimiting;
 
@@ -227,7 +228,15 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
+app.UseForwardedHeaders();
 app.Logger.LogInformation(
     "Data Protection key ring path: {DataProtectionKeysPath}",
     dataProtectionKeysPath);
