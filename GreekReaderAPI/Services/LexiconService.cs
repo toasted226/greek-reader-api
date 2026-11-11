@@ -1,11 +1,19 @@
 using GreekReader.Interop;
 using GreekReaderAPI.Data;
 using GreekReaderAPI.Models;
+using System.Collections.Frozen;
 
 namespace GreekReaderAPI.Services;
 
 public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
 {
+    private static readonly FrozenDictionary<string, PartOfSpeech> PartOfSpeechByName =
+        Enum.GetValues<PartOfSpeech>()
+            .ToFrozenDictionary(p => Normalise(p.ToString()), p => p);
+
+    private static string Normalise(string value) =>
+        string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant();
+
     private static LemmaResponse ToLemmaResponse(LexiconLemma l)
     {
         return new LemmaResponse(
@@ -68,6 +76,27 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
         }
     }
 
+    private static bool TryParsePartOfSpeech(string? value, out PartOfSpeech partOfSpeech)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            partOfSpeech = default;
+            return false;
+        }
+
+        return PartOfSpeechByName.TryGetValue(Normalise(value), out partOfSpeech);
+    }
+
+    public async Task<string[]> GetFeaturesAsync(string? partOfSpeech, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(partOfSpeech))
+            return await lexicon.GetFeaturesAsync(null, ct);
+
+        return TryParsePartOfSpeech(partOfSpeech, out var pos)
+            ? await lexicon.GetFeaturesAsync(pos, ct)
+            : [];
+    }
+
     public async Task<UserLemmaResponse[]> GetUserLemmasAsync(long userId, GetUserLemmasRequest? filter = null, CancellationToken ct = default)
     {
         var userLemmas = await lexicon.GetUserLemmasAsync(userId, ct);
@@ -97,9 +126,19 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
             .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
             .AsEnumerable();
 
-        if (!string.IsNullOrWhiteSpace(filter?.PartOfSpeech))
-            responses = responses.Where(r =>
-                r.Lemma.Pos.Equals(filter.PartOfSpeech, StringComparison.OrdinalIgnoreCase));
+        var partOfSpeech = filter?.PartOfSpeech;
+        if (!string.IsNullOrWhiteSpace(partOfSpeech))
+        {
+            if (TryParsePartOfSpeech(partOfSpeech, out var pos))
+            {
+                var posName = pos.ToString().ToLowerInvariant();
+                responses = responses.Where(r => r.Lemma.Pos == posName);
+            }
+            else
+            {
+                responses = [];
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(filter?.Lemma))
             responses = responses.Where(r =>

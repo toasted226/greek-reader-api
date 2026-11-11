@@ -28,6 +28,8 @@ public sealed record ExampleResponse(string Greek, string English);
 
 public sealed record FormResponse(string Form, string[] Features);
 
+public sealed record FeaturesResponse(string[] Features);
+
 public sealed record UserLemma(
     int Id,
     long UserId,

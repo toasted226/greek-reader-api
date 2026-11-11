@@ -23,6 +23,33 @@ public static class LexiconEndpoints
         group.MapPost("/analyse", Analyse)
             .Produces<AnalyseResponse[]>()
             .Produces(StatusCodes.Status404NotFound);
+        group.MapGet("/features", GetFeatures)
+            .Produces<FeaturesResponse>()
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                op.Summary = "List distinct grammatical features";
+                op.Description =
+                    "Returns every distinct grammatical feature that can occur on a form " +
+                    "of the given part of speech. Omit partOfSpeech to list features " +
+                    "across all parts of speech. An unrecognised part of speech returns " +
+                    "an empty feature list.";
+                var p = op.Parameters?.FirstOrDefault(p => p.Name == "partOfSpeech");
+                if (p is OpenApiParameter parameter)
+                {
+                    parameter.Description =
+                        "Part of speech to restrict the feature list to (e.g. noun, verb, " +
+                        "proper-noun). Matching ignores case, spaces, and punctuation, so " +
+                        "proper-noun, proper noun, and ProperNoun are equivalent. Omit to " +
+                        "return all features.";
+                    parameter.Examples = new Dictionary<string, IOpenApiExample>
+                    {
+                        ["noun"] = new OpenApiExample { Value = "noun" },
+                        ["verb"] = new OpenApiExample { Value = "verb" },
+                        ["hyphenated proper noun"] = new OpenApiExample { Value = "proper-noun" }
+                    };
+                }
+                return Task.CompletedTask;
+            });
 
         var userLemmas = app.MapGroup("/lemmas").RequireAuthorization();
         userLemmas.MapGet("", GetUserLemmas)
@@ -189,6 +216,17 @@ public static class LexiconEndpoints
             return TypedResults.NotFound();
 
         return TypedResults.Ok(entries);
+    }
+
+    private static async Task<Ok<FeaturesResponse>> GetFeatures
+    (
+        [FromQuery] string? partOfSpeech,
+        ILexiconService lexicon,
+        CancellationToken ct
+    )
+    {
+        var features = await lexicon.GetFeaturesAsync(partOfSpeech, ct);
+        return TypedResults.Ok(new FeaturesResponse(features));
     }
 
     private static async Task<IResult> UploadFile

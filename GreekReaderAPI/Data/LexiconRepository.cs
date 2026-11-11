@@ -83,6 +83,24 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                     .ToArray());
     }
 
+    public async Task<string[]> GetFeaturesAsync(
+        PartOfSpeech? partOfSpeech, CancellationToken ct = default)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var features = await conn.QueryAsync<string>(new CommandDefinition(
+            """
+            select distinct feature
+            from forms f
+            join lemmas l on l.id = f.lemma_id
+            cross join lateral unnest(f.features) as u(feature)
+            where @pos::int is null or l.pos = @pos::int
+            order by feature
+            """,
+            new { pos = partOfSpeech is null ? (int?)null : (int)partOfSpeech.Value },
+            cancellationToken: ct));
+        return [.. features];
+    }
+
     public async Task<UserLemma[]> GetUserLemmasAsync(long userId, CancellationToken ct = default)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
