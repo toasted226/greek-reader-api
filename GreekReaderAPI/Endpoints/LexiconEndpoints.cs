@@ -8,6 +8,7 @@ using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace GreekReaderAPI.Endpoints;
 
@@ -22,11 +23,56 @@ public static class LexiconEndpoints
         group.MapPost("/analyse", Analyse)
             .Produces<AnalyseResponse[]>()
             .Produces(StatusCodes.Status404NotFound);
+        group.MapGet("/features", GetFeatures)
+            .Produces<FeaturesResponse>()
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                op.Summary = "List distinct grammatical features";
+                op.Description =
+                    "Returns every distinct grammatical feature that can occur on a form " +
+                    "of the given part of speech. Omit partOfSpeech to list features " +
+                    "across all parts of speech. An unrecognised part of speech returns " +
+                    "an empty feature list.";
+                var p = op.Parameters?.FirstOrDefault(p => p.Name == "partOfSpeech");
+                if (p is OpenApiParameter parameter)
+                {
+                    parameter.Description =
+                        "Part of speech to restrict the feature list to (e.g. noun, verb, " +
+                        "proper-noun). Matching ignores case, spaces, and punctuation, so " +
+                        "proper-noun, proper noun, and ProperNoun are equivalent. Omit to " +
+                        "return all features.";
+                    parameter.Examples = new Dictionary<string, IOpenApiExample>
+                    {
+                        ["noun"] = new OpenApiExample { Value = "noun" },
+                        ["verb"] = new OpenApiExample { Value = "verb" },
+                        ["hyphenated proper noun"] = new OpenApiExample { Value = "proper-noun" }
+                    };
+                }
+                return Task.CompletedTask;
+            });
 
         var userLemmas = app.MapGroup("/lemmas").RequireAuthorization();
         userLemmas.MapGet("", GetUserLemmas)
             .Produces<UserLemmaResponse[]>()
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                var p = op.Parameters?.FirstOrDefault(p => p.Name == "featureList");
+                if (p is OpenApiParameter parameter)
+                {
+                    parameter.Description = "Filter by grammatical features. Accepts a single feature " +
+                                            "(e.g. masculine) or a comma-separated list, optionally wrapped " +
+                                            "in square brackets (e.g. [masculine, nominative]). Only lemmas " +
+                                            "with a form that includes every listed feature are returned; " +
+                                            "matching is case-insensitive.";
+                    parameter.Examples = new Dictionary<string, IOpenApiExample>
+                    {
+                        ["single feature"] = new OpenApiExample { Value = "masculine" },
+                        ["feature list"] = new OpenApiExample { Value = "[masculine, nominative]" }
+                    };
+                }
+                return Task.CompletedTask;
+            });
         userLemmas.MapPost("", CreateUserLemma)
             .Produces<UserLemmaResponse>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -75,10 +121,11 @@ public static class LexiconEndpoints
 
     private static async Task<Ok<UserLemmaResponse[]>> GetUserLemmas
     (
+        [AsParameters] GetUserLemmasRequest filter,
         ClaimsPrincipal principal,
         ILexiconService lexicon,
         CancellationToken ct
-    ) => TypedResults.Ok(await lexicon.GetUserLemmasAsync(principal.GetUserId(), ct));
+    ) => TypedResults.Ok(await lexicon.GetUserLemmasAsync(principal.GetUserId(), filter, ct));
 
     private static async Task<Results<Created<UserLemmaResponse>, NotFound>> CreateUserLemma
     (
@@ -169,6 +216,17 @@ public static class LexiconEndpoints
             return TypedResults.NotFound();
 
         return TypedResults.Ok(entries);
+    }
+
+    private static async Task<Ok<FeaturesResponse>> GetFeatures
+    (
+        [FromQuery] string? partOfSpeech,
+        ILexiconService lexicon,
+        CancellationToken ct
+    )
+    {
+        var features = await lexicon.GetFeaturesAsync(partOfSpeech, ct);
+        return TypedResults.Ok(new FeaturesResponse(features));
     }
 
     private static async Task<IResult> UploadFile

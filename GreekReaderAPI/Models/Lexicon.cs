@@ -28,11 +28,14 @@ public sealed record ExampleResponse(string Greek, string English);
 
 public sealed record FormResponse(string Form, string[] Features);
 
+public sealed record FeaturesResponse(string[] Features);
+
 public sealed record UserLemma(
     int Id,
     long UserId,
     int LemmaId,
-    string ContextSentence);
+    string ContextSentence,
+    DateTime SavedAt);
 
 public sealed record LexiconLemma(
     int Id,

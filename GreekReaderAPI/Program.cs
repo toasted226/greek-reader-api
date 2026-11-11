@@ -66,7 +66,31 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-builder.Services.AddOpenApi(options => { options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1; });
+builder.Services.AddOpenApi(options =>
+{
+    options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1;
+    options.AddSchemaTransformer((schema, context, ct) =>
+    {
+        if (context.JsonTypeInfo.Type == typeof(GreekReaderAPI.Models.FeatureListParam) ||
+            context.JsonTypeInfo.Type == typeof(GreekReaderAPI.Models.FeatureListParam?))
+        {
+            // FeatureListParam is bound from a single query-string value (see
+            // FeatureListParam.TryParse), so document it as a string with a
+            // list syntax instead of the object-with-array shape inferred
+            // from its Features property by default.
+            schema.Type = JsonSchemaType.String;
+            schema.Properties = null;
+            schema.Description =
+                "A grammatical feature (e.g. masculine) or a comma-separated list of features, " +
+                "optionally wrapped in square brackets (e.g. [masculine, nominative] or " +
+                "masculine, nominative).";
+            schema.Pattern = @"^(?:\[[^\[\]]*\]|[^\[\]]*)$";
+            schema.Examples =
+                ["masculine", "masculine, nominative", "[masculine, nominative]"];
+        }
+        return Task.CompletedTask;
+    });
+});
 
 // Dependency Injection
 builder.Services.AddScoped<IUserRepository, UserRepository>();
