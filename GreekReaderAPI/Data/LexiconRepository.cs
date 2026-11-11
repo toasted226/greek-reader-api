@@ -92,7 +92,8 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                 id,
                 user_id,
                 lemma_id,
-                context_sentence
+                context_sentence,
+                saved_at
             from user_lemmas where user_id = @userId
             order by id
             """,
@@ -109,7 +110,8 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                 id,
                 user_id,
                 lemma_id,
-                context_sentence
+                context_sentence,
+                saved_at
             from user_lemmas where user_id = @userId and lemma_id = @lemmaId
             order by id
             limit 1
@@ -126,7 +128,7 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
             insert into user_lemmas (user_id, lemma_id, context_sentence)
             select @userId, @lemmaId, @contextSentence
             where exists (select 1 from lemmas where id = @lemmaId)
-            returning id, user_id, lemma_id, context_sentence
+            returning id, user_id, lemma_id, context_sentence, saved_at
             """,
             new { userId, lemmaId, contextSentence }, cancellationToken: ct));
     }

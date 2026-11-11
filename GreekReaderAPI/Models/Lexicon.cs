@@ -32,7 +32,8 @@ public sealed record UserLemma(
     int Id,
     long UserId,
     int LemmaId,
-    string ContextSentence);
+    string ContextSentence,
+    DateTime SavedAt);
 
 public sealed record LexiconLemma(
     int Id,

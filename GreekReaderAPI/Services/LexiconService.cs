@@ -68,18 +68,65 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
         }
     }
 
-    public async Task<UserLemmaResponse[]> GetUserLemmasAsync(long userId, CancellationToken ct = default)
+    public async Task<UserLemmaResponse[]> GetUserLemmasAsync(long userId, GetUserLemmasRequest? filter = null, CancellationToken ct = default)
     {
         var userLemmas = await lexicon.GetUserLemmasAsync(userId, ct);
+
+        // Apply date filters before fetching lemma entries
+        if (filter?.MinDate is { } minDate)
+            userLemmas = [.. userLemmas.Where(l => DateOnly.FromDateTime(l.SavedAt) >= minDate)];
+
+        if (filter?.MaxDate is { } maxDate)
+            userLemmas = [.. userLemmas.Where(l => DateOnly.FromDateTime(l.SavedAt) <= maxDate)];
+
+        if (filter?.Latest is true)
+        {
+            userLemmas =
+            [
+                .. userLemmas
+                    .GroupBy(l => l.LemmaId)
+                    .Select(g => g.OrderByDescending(l => l.SavedAt).First())
+            ];
+        }
+
         var lemmaEntries = await lexicon.GetAsync([.. userLemmas.Select(l => l.LemmaId).Distinct()], ct);
         var byId = lemmaEntries.ToDictionary(l => l.Id);
 
-        return
-        [
-            .. userLemmas
-                .Where(l => byId.ContainsKey(l.LemmaId))
-                .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
-        ];
+        var responses = userLemmas
+            .Where(l => byId.ContainsKey(l.LemmaId))
+            .Select(l => ToUserLemmaResponse(l, byId[l.LemmaId]))
+            .AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(filter?.PartOfSpeech))
+            responses = responses.Where(r =>
+                r.Lemma.Pos.Equals(filter.PartOfSpeech, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(filter?.Lemma))
+            responses = responses.Where(r =>
+                r.Lemma.Lemma.Contains(filter.Lemma, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(filter?.Form))
+            responses = responses.Where(r =>
+                r.Lemma.Forms.Any(f =>
+                    f.Form.Contains(filter.Form, StringComparison.OrdinalIgnoreCase)));
+
+        if (!string.IsNullOrWhiteSpace(filter?.Example))
+            responses = responses.Where(r =>
+                r.ContextSentence.Contains(filter.Example, StringComparison.OrdinalIgnoreCase)
+                || r.Lemma.Examples.Any(e =>
+                    e.Greek.Contains(filter.Example, StringComparison.OrdinalIgnoreCase)
+                    || e.English.Contains(filter.Example, StringComparison.OrdinalIgnoreCase)));
+
+        if (filter?.FeatureList is not { Features.Length: > 0 } featureParam) return [.. responses];
+        {
+            var requiredFeatures = featureParam.Features;
+            responses = responses.Where(r =>
+                r.Lemma.Forms.Any(f =>
+                    requiredFeatures.All(req =>
+                        f.Features.Contains(req, StringComparer.OrdinalIgnoreCase))));
+        }
+
+        return [.. responses];
     }
 
     public async Task<UserLemmaResponse?> GetUserLemmaAsync(long userId, int lemmaId, CancellationToken ct = default)

@@ -8,6 +8,7 @@ using GreekReaderAPI.Utilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace GreekReaderAPI.Endpoints;
 
@@ -26,7 +27,25 @@ public static class LexiconEndpoints
         var userLemmas = app.MapGroup("/lemmas").RequireAuthorization();
         userLemmas.MapGet("", GetUserLemmas)
             .Produces<UserLemmaResponse[]>()
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                var p = op.Parameters?.FirstOrDefault(p => p.Name == "featureList");
+                if (p is OpenApiParameter parameter)
+                {
+                    parameter.Description = "Filter by grammatical features. Accepts a single feature " +
+                                            "(e.g. masculine) or a comma-separated list, optionally wrapped " +
+                                            "in square brackets (e.g. [masculine, nominative]). Only lemmas " +
+                                            "with a form that includes every listed feature are returned; " +
+                                            "matching is case-insensitive.";
+                    parameter.Examples = new Dictionary<string, IOpenApiExample>
+                    {
+                        ["single feature"] = new OpenApiExample { Value = "masculine" },
+                        ["feature list"] = new OpenApiExample { Value = "[masculine, nominative]" }
+                    };
+                }
+                return Task.CompletedTask;
+            });
         userLemmas.MapPost("", CreateUserLemma)
             .Produces<UserLemmaResponse>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -75,10 +94,11 @@ public static class LexiconEndpoints
 
     private static async Task<Ok<UserLemmaResponse[]>> GetUserLemmas
     (
+        [AsParameters] GetUserLemmasRequest filter,
         ClaimsPrincipal principal,
         ILexiconService lexicon,
         CancellationToken ct
-    ) => TypedResults.Ok(await lexicon.GetUserLemmasAsync(principal.GetUserId(), ct));
+    ) => TypedResults.Ok(await lexicon.GetUserLemmasAsync(principal.GetUserId(), filter, ct));
 
     private static async Task<Results<Created<UserLemmaResponse>, NotFound>> CreateUserLemma
     (
