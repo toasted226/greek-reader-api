@@ -39,6 +39,68 @@ the values into the Compose files.
 silently fall back to the localhost/Gmail development defaults. Compose supplies
 the real values as environment variables from `.env`.
 
+## Environment variable reference
+
+`.env.example` lists every variable the Compose stack reads. The tables below
+document the same set, plus the application settings that can also be supplied
+directly as environment variables. A dash (`—`) in the Default column means the
+value has no safe default and must be set.
+
+### Runtime and networking
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Production` | `Development` enables the console email sender and HTTP-compatible cookies; `Production` enforces secure cookies and startup validation. |
+| `COMPOSE_PROJECT_NAME` | `greek-reader` | Prefix for the Compose project and named volumes. |
+| `API_BASE_URL` | your public API origin | Public API origin for your deployment. |
+| `FRONTEND_BASE_URL` | your public frontend origin | Frontend origin for CORS and sign-in links. |
+| `API_BIND` / `API_PORT` | `127.0.0.1` / `5080` | Host binding for the API; keep it on loopback. |
+| `WEB_BIND` / `WEB_PORT` | `127.0.0.1` / `4000` | Host binding for the web app. Keep `4000` for local SSR. |
+
+### Database
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `DB_HOST` / `DB_PORT` | `db` / `5432` | PostgreSQL location inside Compose. |
+| `DB_NAME` / `DB_USER` | `greekreader` / `greekreader` | Database and role. |
+| `POSTGRES_PASSWORD` | — (required) | Database password. Generate with `openssl rand -hex 32`. |
+
+### Email
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `SMTP_HOST` / `SMTP_PORT` | `smtp.example.com` / `587` | Outbound mail server. |
+| `SMTP_USE_SSL` | `true` | `true` means STARTTLS; `false` selects implicit TLS (usually port 465). |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | — / `Greek Reader` | Sender address and display name. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | empty | Optional SMTP credentials. |
+
+### Data Protection
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `DATA_PROTECTION_KEYS_PATH` | `/var/lib/greekreader/dataprotection-keys` | Persistent volume for the Data Protection key ring. |
+
+### Build contexts
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `ENGINE_CONTEXT` | `../engine` | Build context for the F# project, relative to `compose.yaml`. |
+| `FRONTEND_CONTEXT` | `../../frontend/web` | Build context for the Angular project, relative to `compose.yaml`. |
+
+### Application settings
+
+| Variable / setting | Default | Purpose |
+|---|---|---|
+| `Analyse__MaxTextLength` | `50000` | Maximum characters accepted by `POST /lexicon/analyse`. |
+| `Lexicon__FormMaxLength` | `100` | Maximum length of the `form` query value. |
+| `OpenApi__Enabled` | `true` | Set to `false` to disable Swagger UI and the OpenAPI JSON document. In Compose this is controlled by `OPENAPI_ENABLED`. |
+| `FileUpload__MaxFileBytes` | `1048576` (1 MiB) | Per-file upload limit; also sets the Kestrel body limit (plus 64 KiB). |
+| `FileUpload__MaxFilesPerUser` | `100` | Maximum stored files per account. |
+| `FileUpload__MaxTextBytesPerUser` | `52428800` (50 MiB) | Maximum normalised UTF-8 text stored per account. |
+| `FileUpload__AllowedExtensions` | `.txt`, `.text` | Accepted upload extensions. |
+| `FileUpload__AllowedContentTypes` | `text/plain` | Accepted upload media types. |
+| `AllowedHosts` | your API hostnames | Set in `appsettings.Production.json`; `*` is rejected in production. |
+
 ## Production non-secret settings
 
 | Setting | Value | Notes |
@@ -47,6 +109,7 @@ the real values as environment variables from `.env`.
 | `App:BackendBaseUrl` | `https://greek-reader-api.modulrza.app` | Reserved; not currently read by the app |
 | `App:FrontendBaseUrl` | `https://greek-reader.modulrza.app` | Used for CORS and magic-link URLs |
 | `DataProtection:KeysPath` | `/var/lib/greekreader/dataprotection-keys` | Must be a persistent volume |
+| `OpenApi:Enabled` | `true` | Swagger UI at `/swagger` and OpenAPI JSON at `/openapi/v1.json`; set `false` to disable both |
 | `Logging:Console:FormatterName` | `json` | Structured logs for Docker |
 | `Email:SmtpPort` / `UseSsl` / `FromName` | `587` / `true` / `Greek Reader` | Non-secret SMTP defaults |
 
@@ -72,6 +135,7 @@ SMTP.
 | `SMTP_USERNAME` | `Email__Username` | **Secret**; may be empty |
 | `SMTP_PASSWORD` | `Email__Password` | **Secret**; may be empty |
 | `DATA_PROTECTION_KEYS_PATH` | `DataProtection__KeysPath` | Also the volume mount target |
+| `OPENAPI_ENABLED` | `OpenApi__Enabled` | Defaults to `true`; set `false` to disable Swagger/OpenAPI |
 | `API_BIND` / `API_PORT` | Host port mapping | Published on loopback; the host nginx proxies to it |
 | `WEB_BIND` / `WEB_PORT` | Host port mapping | Published on loopback; the host nginx proxies to it |
 | `ENGINE_CONTEXT` | Build context for the F# project | Path relative to `compose.yaml` |
@@ -105,8 +169,8 @@ docker compose -f compose.yaml -f compose.local.yaml up -d --build
 The override:
 
 - sets `ASPNETCORE_ENVIRONMENT=Development`, so cookies use
-  `Secure=SameAsRequest`, the console email sender replaces SMTP, and
-  OpenAPI/Swagger are mapped;
+  `Secure=SameAsRequest` and the console email sender replaces SMTP;
+  OpenAPI/Swagger remain enabled by default in every environment;
 - sets `App__FrontendBaseUrl=http://localhost:${WEB_PORT}` so CORS matches;
 - sets the frontend runtime `API_BASE_URL=http://localhost:${API_PORT}`.
 
@@ -116,19 +180,16 @@ both are published on `127.0.0.1` only. Keep `WEB_PORT=4000` for local testing:
 Angular's production host allowlist only accepts `localhost:4000`, so another
 port would make the SSR server reject the browser's Host header.
 
-The local defaults in `.env.example` point at the sibling checkouts:
-
-```env
-ENGINE_CONTEXT=../../fsharp/GreekReader
-FRONTEND_CONTEXT=../../angular/greek-reader
-```
-
-The deployment layout uses:
+`.env.example` and `compose.yaml` share the same default build contexts, so
+local and self-hosted checkouts use one layout:
 
 ```env
 ENGINE_CONTEXT=../engine
 FRONTEND_CONTEXT=../../frontend/web
 ```
+
+Relative to `compose.yaml` in `backend/api`, those resolve to `backend/engine`
+and `frontend/web`. Adjust both if your checkouts live elsewhere.
 
 ## Domains, CORS, and cookies
 
@@ -177,17 +238,8 @@ use `proxy_read_timeout 180s`).
 
 ## Request limits and uploads
 
-Inherited from `appsettings.json`:
-
-| Setting | Default |
-|---|---|
-| `Analyse:MaxTextLength` | 50000 |
-| `Lexicon:FormMaxLength` | 100 |
-| `FileUpload:MaxFileBytes` | 1048576 |
-| `FileUpload:MaxFilesPerUser` | 100 |
-| `FileUpload:MaxTextBytesPerUser` | 52428800 |
-| `FileUpload:AllowedExtensions` | `.txt`, `.text` |
-| `FileUpload:AllowedContentTypes` | `text/plain` |
+The request and upload limits are listed under
+[Application settings](#application-settings).
 
 `FileUpload:MaxFileBytes` also sets the Kestrel request-body limit
 (`MaxFileBytes + 64 KiB`). The reverse proxy body limit must be at least that

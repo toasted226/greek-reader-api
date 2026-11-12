@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
 using System.Net.Mail;
 using System.Threading.RateLimiting;
 
@@ -71,23 +72,22 @@ builder.Services.AddOpenApi(options =>
     options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1;
     options.AddSchemaTransformer((schema, context, ct) =>
     {
-        if (context.JsonTypeInfo.Type == typeof(GreekReaderAPI.Models.FeatureListParam) ||
-            context.JsonTypeInfo.Type == typeof(GreekReaderAPI.Models.FeatureListParam?))
-        {
-            // FeatureListParam is bound from a single query-string value (see
-            // FeatureListParam.TryParse), so document it as a string with a
-            // list syntax instead of the object-with-array shape inferred
-            // from its Features property by default.
-            schema.Type = JsonSchemaType.String;
-            schema.Properties = null;
-            schema.Description =
-                "A grammatical feature (e.g. masculine) or a comma-separated list of features, " +
-                "optionally wrapped in square brackets (e.g. [masculine, nominative] or " +
-                "masculine, nominative).";
-            schema.Pattern = @"^(?:\[[^\[\]]*\]|[^\[\]]*)$";
-            schema.Examples =
-                ["masculine", "masculine, nominative", "[masculine, nominative]"];
-        }
+        if (context.JsonTypeInfo.Type != typeof(GreekReaderAPI.Models.FeatureListParam) &&
+            context.JsonTypeInfo.Type != typeof(GreekReaderAPI.Models.FeatureListParam?)) return Task.CompletedTask;
+        
+        // FeatureListParam is bound from a single query-string value (see
+        // FeatureListParam.TryParse), so document it as a string with a
+        // list syntax instead of the object-with-array shape inferred
+        // from its Features property by default.
+        schema.Type = JsonSchemaType.String;
+        schema.Properties = null;
+        schema.Description =
+            "A grammatical feature (e.g. masculine) or a comma-separated list of features, " +
+            "optionally wrapped in square brackets (e.g. [masculine, nominative] or " +
+            "masculine, nominative).";
+        schema.Pattern = @"^(?:\[[^\[\]]*\]|[^\[\]]*)$";
+        schema.Examples =
+            ["masculine", "masculine, nominative", "[masculine, nominative]"];
         return Task.CompletedTask;
     });
 });
@@ -114,6 +114,9 @@ builder.Services.Configure<AnalyseOptions>(
 
 builder.Services.Configure<LexiconOptions>(
     builder.Configuration.GetSection(LexiconOptions.SectionName));
+
+builder.Services.Configure<OpenApiOptions>(
+    builder.Configuration.GetSection(OpenApiOptions.SectionName));
 
 var dataProtectionKeysPath = ResolveDataProtectionKeysPath(builder.Configuration, builder.Environment);
 
@@ -290,7 +293,9 @@ if (!app.Environment.IsDevelopment())
 
 app.MapHealthChecks("/health");
 
-if (app.Environment.IsDevelopment())
+var openApiOptions = app.Services.GetRequiredService<IOptions<OpenApiOptions>>().Value;
+
+if (openApiOptions.Enabled)
 {
     app.MapOpenApi();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "GreekReaderAPI v1"));

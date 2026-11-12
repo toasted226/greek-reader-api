@@ -11,6 +11,7 @@ x-api-environment: &api-environment
   ASPNETCORE_URLS: http://+:8080
   ConnectionStrings__Postgres: "Host=${DB_HOST:-db};Port=${DB_PORT:-5432};Database=${DB_NAME:-greekreader};Username=${DB_USER:-greekreader};Password=${POSTGRES_PASSWORD};Maximum Pool Size=20"
   DataProtection__KeysPath: ${DATA_PROTECTION_KEYS_PATH:-/var/lib/greekreader/dataprotection-keys}
+  OpenApi__Enabled: ${OPENAPI_ENABLED:-true}
 
 x-api-common: &api-common
   image: greek-reader-api:local
