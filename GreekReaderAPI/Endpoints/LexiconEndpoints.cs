@@ -34,20 +34,18 @@ public static class LexiconEndpoints
                     "across all parts of speech. An unrecognised part of speech returns " +
                     "an empty feature list.";
                 var p = op.Parameters?.FirstOrDefault(p => p.Name == "partOfSpeech");
-                if (p is OpenApiParameter parameter)
+                if (p is not OpenApiParameter parameter) return Task.CompletedTask;
+                parameter.Description =
+                    "Part of speech to restrict the feature list to (e.g. noun, verb, " +
+                    "proper-noun). Matching ignores case, spaces, and punctuation, so " +
+                    "proper-noun, proper noun, and ProperNoun are equivalent. Omit to " +
+                    "return all features.";
+                parameter.Examples = new Dictionary<string, IOpenApiExample>
                 {
-                    parameter.Description =
-                        "Part of speech to restrict the feature list to (e.g. noun, verb, " +
-                        "proper-noun). Matching ignores case, spaces, and punctuation, so " +
-                        "proper-noun, proper noun, and ProperNoun are equivalent. Omit to " +
-                        "return all features.";
-                    parameter.Examples = new Dictionary<string, IOpenApiExample>
-                    {
-                        ["noun"] = new OpenApiExample { Value = "noun" },
-                        ["verb"] = new OpenApiExample { Value = "verb" },
-                        ["hyphenated proper noun"] = new OpenApiExample { Value = "proper-noun" }
-                    };
-                }
+                    ["noun"] = new OpenApiExample { Value = "noun" },
+                    ["verb"] = new OpenApiExample { Value = "verb" },
+                    ["hyphenated proper noun"] = new OpenApiExample { Value = "proper-noun" }
+                };
                 return Task.CompletedTask;
             });
 
@@ -58,19 +56,17 @@ public static class LexiconEndpoints
             .AddOpenApiOperationTransformer((op, _, _) =>
             {
                 var p = op.Parameters?.FirstOrDefault(p => p.Name == "featureList");
-                if (p is OpenApiParameter parameter)
+                if (p is not OpenApiParameter parameter) return Task.CompletedTask;
+                parameter.Description = "Filter by grammatical features. Accepts a single feature " +
+                                        "(e.g. masculine) or a comma-separated list, optionally wrapped " +
+                                        "in square brackets (e.g. [masculine, nominative]). Only lemmas " +
+                                        "with a form that includes every listed feature are returned; " +
+                                        "matching is case-insensitive.";
+                parameter.Examples = new Dictionary<string, IOpenApiExample>
                 {
-                    parameter.Description = "Filter by grammatical features. Accepts a single feature " +
-                                            "(e.g. masculine) or a comma-separated list, optionally wrapped " +
-                                            "in square brackets (e.g. [masculine, nominative]). Only lemmas " +
-                                            "with a form that includes every listed feature are returned; " +
-                                            "matching is case-insensitive.";
-                    parameter.Examples = new Dictionary<string, IOpenApiExample>
-                    {
-                        ["single feature"] = new OpenApiExample { Value = "masculine" },
-                        ["feature list"] = new OpenApiExample { Value = "[masculine, nominative]" }
-                    };
-                }
+                    ["single feature"] = new OpenApiExample { Value = "masculine" },
+                    ["feature list"] = new OpenApiExample { Value = "[masculine, nominative]" }
+                };
                 return Task.CompletedTask;
             });
         userLemmas.MapPost("", CreateUserLemma)
