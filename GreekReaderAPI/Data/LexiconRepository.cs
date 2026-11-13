@@ -54,7 +54,7 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                 l.Lemma,
                 l.Pos,
                 l.Glosses,
-                [.. examples[l.Id].Select(e => new Example(e.Greek, e.English))],
+                [.. examples[l.Id].Select(e => new ExampleResponse(e.Greek, e.English ?? ""))],
                 [.. forms[l.Id].Select(f => new FormEntry(f.Form, f.Features))]));
     }
 

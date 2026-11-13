@@ -21,7 +21,7 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
             l.Lemma,
             l.Pos.ToString().ToLowerInvariant(),
             l.Glosses,
-            [.. l.Examples.Select(e => new ExampleResponse(e.Greek, e.English))],
+            l.Examples,
             [.. l.Forms.Select(f => new FormResponse(f.Form, f.Features))]
         );
     }

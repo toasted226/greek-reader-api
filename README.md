@@ -123,7 +123,17 @@ On a fresh database the lexicon is empty. Import it once so analysis has somethi
 docker compose -f compose.yaml -f compose.local.yaml --profile import run --rm import
 ```
 
-> `--import` is destructive: it truncates `lemmas`, `forms`, `examples`, and `user_lemmas`. Run it on a new database only; future lexicon updates should use a migration.
+The import loads lemmas, forms, and example sentences. Some Wiktionary examples have Greek text but no English translation; those are kept with an empty English string rather than dropped.
+
+> `--import` is destructive: it truncates `lemmas`, `forms`, `examples`, and `user_lemmas`. Run it on a new database only; other lexicon updates should use a migration.
+
+To add examples to an existing lexicon without touching saved lemmas, run the examples-only backfill:
+
+```bash
+docker compose -f compose.yaml -f compose.local.yaml --profile import run --rm import --import-examples
+```
+
+It replaces `examples` only, and refuses to run if the engine's lemmas do not match the database exactly.
 
 ### Confirm it works
 
@@ -280,6 +290,14 @@ docker compose --profile import run --rm import
 
 `--import` truncates `lemmas`, `forms`, `examples`, and `user_lemmas`, so run it on a new database only.
 
+On a database that already has a lexicon, import examples without touching saved lemmas:
+
+```bash
+docker compose --profile import run --rm import --import-examples
+```
+
+This replaces only `examples`, and aborts before writing anything if the engine's lemma set does not match the database. Examples with Greek text but no English translation are stored with an empty English string.
+
 ### 4. Verify
 
 ```bash
@@ -335,7 +353,7 @@ Current scope is intentionally narrow:
 - **Synchronous work.** Uploads analyse inline and sign-in sends mail inline; there is no job queue or retry worker.
 - **Limited paging and no caching.** File and saved-lemma lists return everything; the lexicon query is paged, but deep offsets are not optimised. Opening a file re-runs analysis rather than serving a cached result.
 - **Single instance.** In-memory rate limits, throttles, and Data Protection keys assume one API replica.
-- **Destructive lexicon import.** `--import` is first-deploy only; later lexicon changes need a migration.
+- **Destructive lexicon import.** `--import` is first-deploy only; later lexicon changes need a migration. Examples are the exception: `--import-examples` refreshes them without touching saved lemmas.
 - **No API keys yet.** Non-browser clients must use the cookie-based sign-in flow.
 - **No automated test suite or CI in this repository yet.** The API is verified manually with HTTP and runtime checks; the F# engine has its own conversion tests.
 

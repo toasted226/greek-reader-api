@@ -275,10 +275,26 @@ docker compose run --rm import
 ```
 
 First deploy only. It truncates `lemmas`, `forms`, `examples`, **and
-`user_lemmas`**, so re-running it destroys users' saved lemmas. For future
-lexicon updates, use a separate migration rather than re-running `--import`.
-`--import` does require `DataProtection__KeysPath` in Production and reads the
-bundled `Resources/*.jsonl` files.
+`user_lemmas`**, so re-running it destroys users' saved lemmas. It loads
+lemmas, forms, and examples; an example with Greek text but no English
+translation is stored with an empty English string. `--import` does require
+`DataProtection__KeysPath` in Production and reads the bundled `Resources/*.jsonl`
+files.
+
+Examples backfill for an existing lexicon:
+
+```bash
+dotnet GreekReaderAPI.dll --import-examples
+# or, in Compose:
+docker compose run --rm import --import-examples
+```
+
+This replaces `examples` only, leaving `lemmas`, `forms`, and `user_lemmas`
+untouched. It matches engine entries to existing lemma IDs by
+`(lemma, pos, occurrence)` and aborts before writing anything if the sets do not
+match, so run it only against a database built from the same engine data. For
+other lexicon updates, use a dedicated migration rather than re-running
+`--import`.
 
 ## Data Protection
 

@@ -286,6 +286,20 @@ if (args.Contains("--import"))
     return;
 }
 
+if (args.Contains("--import-examples"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var importer = scope.ServiceProvider.GetRequiredService<LexiconImporter>();
+
+    var entries = GreekReader.Interop.Api.Load();
+    var (imported, withoutEnglish) = await importer.BackfillExamplesAsync(entries);
+
+    app.Logger.LogInformation(
+        "Backfilled {ExampleCount} examples ({WithoutEnglish} without an English translation).",
+        imported, withoutEnglish);
+    return;
+}
+
 if (!app.Environment.IsDevelopment())
 {
     ValidateRuntimeConfiguration(builder.Configuration);

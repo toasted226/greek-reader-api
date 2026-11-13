@@ -63,6 +63,6 @@ public sealed record LexiconLemma(
     string Lemma,
     PartOfSpeech Pos,
     string[] Glosses,
-    Example[] Examples,
+    ExampleResponse[] Examples,
     FormEntry[] Forms);
     
