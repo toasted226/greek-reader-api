@@ -1,0 +1,48 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two deploys overlap; do not kill a deploy that is already running.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to mervstation
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://greek-reader-api.modulrza.app
+    timeout-minutes: 45
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          # Tailnet membership propagates eventually, so wait for the peer to
+          # become reachable before attempting SSH.
+          ping: mervstation.tail4f070.ts.net
+
+      - name: Deploy over Tailscale SSH
+        env:
+          DEPLOY_HOST: mervstation.tail4f070.ts.net
+          DEPLOY_USER: merv
+          DEPLOY_SCRIPT: /home/merv/Developer/greek-reader/deploy.sh
+        run: |
+          ssh -o BatchMode=yes \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=30 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=20 \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "bash -lc '${DEPLOY_SCRIPT}'"
