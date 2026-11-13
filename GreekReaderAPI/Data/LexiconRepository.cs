@@ -54,13 +54,124 @@ public sealed class LexiconRepository(NpgsqlDataSource db) : ILexiconRepository
                 l.Lemma,
                 l.Pos,
                 l.Glosses,
-                [.. examples[l.Id].Select(e => new Example(e.Greek, e.English))],
+                [.. examples[l.Id].Select(e => new ExampleResponse(e.Greek, e.English ?? ""))],
                 [.. forms[l.Id].Select(f => new FormEntry(f.Form, f.Features))]));
     }
 
     public async Task<LexiconLemma[]> GetAsync(int[] ids, CancellationToken ct = default) =>
         [.. (await LoadAsync(ids, ct)).Values.OrderBy(e => e.Lemma, StringComparer.Ordinal)];
-    
+
+    /// <summary>
+    /// Filters come from <see cref="LexiconLemmaQuery"/>; values in
+    /// <see cref="LexiconLemmaQuery.FormNormalized"/> and
+    /// <see cref="LexiconLemmaQuery.FormContainsNormalized"/> are already
+    /// normalised. Lemma and example text is matched as a literal,
+    /// case-insensitive substring with no accent folding.
+    /// </summary>
+    public async Task<(LexiconLemma[] Items, int Total)> GetLemmasAsync(
+        LexiconLemmaQuery query, int offset, int limit, CancellationToken ct = default)
+    {
+        var (where, parameters) = BuildFilter(query);
+        parameters.Add("limit", limit);
+        parameters.Add("offset", offset);
+
+        await using var conn = await db.OpenConnectionAsync(ct);
+        using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
+            $"""
+             select count(*) from lemmas l where {where};
+             select l.id, l.lemma, l.pos, l.glosses
+             from lemmas l
+             where {where}
+             order by l.lemma collate "C", l.id
+             limit @limit offset @offset;
+             """,
+            parameters, cancellationToken: ct));
+
+        var total = await multi.ReadSingleAsync<int>();
+        var rows = (await multi.ReadAsync<LemmaRow>()).ToList();
+
+        var entries = await LoadAsync([.. rows.Select(r => r.Id)], ct);
+        return ([.. rows.Select(r => entries[r.Id])], total);
+    }
+
+    private static (string Where, DynamicParameters Parameters) BuildFilter(LexiconLemmaQuery query)
+    {
+        var clauses = new List<string>();
+        var parameters = new DynamicParameters();
+
+        if (query.PartOfSpeech is { } partOfSpeech)
+        {
+            clauses.Add("l.pos = @pos");
+            parameters.Add("pos", (short)partOfSpeech);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Lemma))
+        {
+            clauses.Add("strpos(lower(l.lemma), lower(@lemma)) > 0");
+            parameters.Add("lemma", query.Lemma);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.FormNormalized))
+        {
+            clauses.Add(
+                """
+                exists (
+                    select 1 from forms f
+                    where f.lemma_id = l.id and f.form_normalized = @formNormalized
+                )
+                """);
+            parameters.Add("formNormalized", query.FormNormalized);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.FormContainsNormalized))
+        {
+            clauses.Add(
+                """
+                exists (
+                    select 1 from forms f
+                    where f.lemma_id = l.id
+                      and strpos(f.form_normalized, @formContains) > 0
+                )
+                """);
+            parameters.Add("formContains", query.FormContainsNormalized);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Example))
+        {
+            clauses.Add(
+                """
+                exists (
+                    select 1 from examples e
+                    where e.lemma_id = l.id
+                      and (
+                          strpos(lower(e.greek), lower(@example)) > 0
+                          or strpos(lower(e.english), lower(@example)) > 0
+                      )
+                )
+                """);
+            parameters.Add("example", query.Example);
+        }
+
+        if (query.Features.Length > 0)
+        {
+            clauses.Add(
+                """
+                exists (
+                    select 1 from forms f
+                    where f.lemma_id = l.id
+                      and (
+                          select count(distinct lower(feat))
+                          from unnest(f.features) as feat
+                          where lower(feat) = any(@features)
+                      ) = cardinality(@features::text[])
+                )
+                """);
+            parameters.Add("features", query.Features);
+        }
+
+        return (clauses.Count == 0 ? "true" : string.Join(" and ", clauses), parameters);
+    }
+
     public async Task<Dictionary<string, LexiconLemma[]>> GetByFormsAsync(
         string[] forms, CancellationToken ct = default)
     {

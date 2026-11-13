@@ -92,7 +92,9 @@ value has no safe default and must be set.
 | Variable / setting | Default | Purpose |
 |---|---|---|
 | `Analyse__MaxTextLength` | `50000` | Maximum characters accepted by `POST /lexicon/analyse`. |
-| `Lexicon__FormMaxLength` | `100` | Maximum length of the `form` query value. |
+| `Lexicon__FormMaxLength` | `100` | Maximum length of the `form` and `formContains` query values on `GET /lexicon/query`. |
+| `Lexicon__DefaultPageSize` | `50` | Default number of lemmas returned by `GET /lexicon/query` when `limit` is omitted. |
+| `Lexicon__MaxPageSize` | `200` | Maximum accepted `limit` for `GET /lexicon/query`. |
 | `OpenApi__Enabled` | `true` | Set to `false` to disable Swagger UI and the OpenAPI JSON document. In Compose this is controlled by `OPENAPI_ENABLED`. |
 | `FileUpload__MaxFileBytes` | `1048576` (1 MiB) | Per-file upload limit; also sets the Kestrel body limit (plus 64 KiB). |
 | `FileUpload__MaxFilesPerUser` | `100` | Maximum stored files per account. |
@@ -273,10 +275,26 @@ docker compose run --rm import
 ```
 
 First deploy only. It truncates `lemmas`, `forms`, `examples`, **and
-`user_lemmas`**, so re-running it destroys users' saved lemmas. For future
-lexicon updates, use a separate migration rather than re-running `--import`.
-`--import` does require `DataProtection__KeysPath` in Production and reads the
-bundled `Resources/*.jsonl` files.
+`user_lemmas`**, so re-running it destroys users' saved lemmas. It loads
+lemmas, forms, and examples; an example with Greek text but no English
+translation is stored with an empty English string. `--import` does require
+`DataProtection__KeysPath` in Production and reads the bundled `Resources/*.jsonl`
+files.
+
+Examples backfill for an existing lexicon:
+
+```bash
+dotnet GreekReaderAPI.dll --import-examples
+# or, in Compose:
+docker compose run --rm import --import-examples
+```
+
+This replaces `examples` only, leaving `lemmas`, `forms`, and `user_lemmas`
+untouched. It matches engine entries to existing lemma IDs by
+`(lemma, pos, occurrence)` and aborts before writing anything if the sets do not
+match, so run it only against a database built from the same engine data. For
+other lexicon updates, use a dedicated migration rather than re-running
+`--import`.
 
 ## Data Protection
 

@@ -30,6 +30,27 @@ public sealed record FormResponse(string Form, string[] Features);
 
 public sealed record FeaturesResponse(string[] Features);
 
+/// <summary>
+/// A page of lexicon lemmas plus the total number of lemmas matching the filter.
+/// </summary>
+public sealed record LemmaPageResponse(
+    LemmaResponse[] Items,
+    int Offset,
+    int Limit,
+    int Total);
+
+/// <summary>
+/// Resolved filter values for a lexicon query. Text values that have a
+/// normalised column are already normalised through the morphology engine.
+/// </summary>
+public sealed record LexiconLemmaQuery(
+    PartOfSpeech? PartOfSpeech,
+    string? Lemma,
+    string? FormNormalized,
+    string? FormContainsNormalized,
+    string? Example,
+    string[] Features);
+
 public sealed record UserLemma(
     int Id,
     long UserId,
@@ -42,6 +63,6 @@ public sealed record LexiconLemma(
     string Lemma,
     PartOfSpeech Pos,
     string[] Glosses,
-    Example[] Examples,
+    ExampleResponse[] Examples,
     FormEntry[] Forms);
     
