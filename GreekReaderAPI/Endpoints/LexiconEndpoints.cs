@@ -18,8 +18,100 @@ public static class LexiconEndpoints
     {
         var group = app.MapGroup("/lexicon");
         group.MapGet("/query", Query)
-            .Produces<LemmaResponse[]>()
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces<LemmaPageResponse>()
+            .ProducesValidationProblem()
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                op.Summary = "Browse and filter the lexicon";
+                op.Description =
+                    """
+                    Returns a page of lemmas from the lexicon. All filters are optional;
+                    omitting every filter browses the whole lexicon in lemma order. Matching
+                    is case-insensitive. The form filters are normalised through the
+                    morphology engine, so accents, case, and final sigma do not matter.
+                    Lemma and example text is matched literally, so accents are significant
+                    there. A filter that matches nothing returns an empty page, not a 404.
+                    """;
+
+                DescribeParameter(op, "partOfSpeech",
+                    """
+                    Filter by part of speech (e.g. noun, verb, proper-noun). Matching
+                    ignores case, spaces, and punctuation, so proper-noun, proper noun,
+                    and ProperNoun are equivalent. An unrecognised part of speech returns
+                    an empty page.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["noun"] = new OpenApiExample { Value = "noun" },
+                        ["hyphenated proper noun"] = new OpenApiExample { Value = "proper-noun" }
+                    });
+
+                DescribeParameter(op, "lemma",
+                    """
+                    Filter by a case-insensitive substring of the lemma (dictionary
+                    headword). Accents are significant, so λογ does not match λόγος.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["accented"] = new OpenApiExample { Value = "λόγ" }
+                    });
+
+                DescribeParameter(op, "form",
+                    """
+                    Filter by an exact inflected form. The value is normalised through the
+                    morphology engine, so accent, case, and final-sigma differences are
+                    ignored.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["accented"] = new OpenApiExample { Value = "λόγος" },
+                        ["unaccented"] = new OpenApiExample { Value = "λογος" }
+                    });
+
+                DescribeParameter(op, "formContains",
+                    """
+                    Filter by a substring of an inflected form. The value is normalised
+                    through the morphology engine, so λογ matches λόγος.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["form fragment"] = new OpenApiExample { Value = "λογ" }
+                    });
+
+                DescribeParameter(op, "example",
+                    """
+                    Filter by a case-insensitive substring of an example's Greek or English
+                    text. Accents are significant.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["English"] = new OpenApiExample { Value = "word" }
+                    });
+
+                DescribeParameter(op, "featureList",
+                    """
+                    Filter by grammatical features. Accepts a single feature (e.g. masculine)
+                    or a comma-separated list, optionally wrapped in square brackets (e.g.
+                    [masculine, nominative]). Only lemmas with a form that includes every
+                    listed feature are returned; matching is case-insensitive.
+                    """,
+                    new Dictionary<string, IOpenApiExample>
+                    {
+                        ["single feature"] = new OpenApiExample { Value = "masculine" },
+                        ["feature list"] = new OpenApiExample { Value = "[masculine, nominative]" }
+                    });
+
+                DescribeParameter(op, "offset",
+                    "Number of matching lemmas to skip. Defaults to 0.");
+
+                DescribeParameter(op, "limit",
+                    """
+                    Maximum number of lemmas to return. Defaults to the configured page size
+                    and may not exceed the configured maximum.
+                    """);
+
+                return Task.CompletedTask;
+            });
         group.MapPost("/analyse", Analyse)
             .Produces<AnalyseResponse[]>()
             .Produces(StatusCodes.Status404NotFound);
@@ -164,29 +256,58 @@ public static class LexiconEndpoints
         return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
-    private static async Task<Results<Ok<LemmaResponse[]>, NotFound, ValidationProblem>> Query
+    private static async Task<Results<Ok<LemmaPageResponse>, ValidationProblem>> Query
     (
-        string form,
+        [AsParameters] GetLexiconLemmasRequest filter,
         IOptions<LexiconOptions> options,
         ILexiconService lexicon,
         CancellationToken ct
     )
     {
         var maxFormLength = options.Value.FormMaxLength;
+        var maxPageSize = options.Value.MaxPageSize;
+        var offset = filter.Offset ?? 0;
+        var limit = filter.Limit ?? options.Value.DefaultPageSize;
 
-        if (form.Length > maxFormLength)
+        var errors = new Dictionary<string, string[]>();
+
+        if (filter.Form is { Length: > 0 } form && form.Length > maxFormLength)
         {
-            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["form"] = [$"The field form must be a string with a maximum length of {maxFormLength}."]
-            });
+            errors["form"] =
+                [$"The field form must be a string with a maximum length of {maxFormLength}."];
         }
 
-        var entries = await lexicon.QueryAsync(form, ct);
-        if (entries.Length == 0)
-            return TypedResults.NotFound();
+        if (filter.FormContains is { Length: > 0 } formContains && formContains.Length > maxFormLength)
+        {
+            errors["formContains"] =
+                [$"The field formContains must be a string with a maximum length of {maxFormLength}."];
+        }
 
-        return TypedResults.Ok(entries);
+        if (offset < 0)
+            errors["offset"] = ["The field offset must be zero or greater."];
+
+        if (limit < 1 || limit > maxPageSize)
+            errors["limit"] = [$"The field limit must be between 1 and {maxPageSize}."];
+
+        if (errors.Count > 0)
+            return TypedResults.ValidationProblem(errors);
+
+        var page = await lexicon.GetLexiconLemmasAsync(filter, offset, limit, ct);
+        return TypedResults.Ok(page);
+    }
+
+    private static void DescribeParameter(
+        OpenApiOperation op,
+        string name,
+        string description,
+        Dictionary<string, IOpenApiExample>? examples = null)
+    {
+        if (op.Parameters?.FirstOrDefault(p => p.Name == name) is not OpenApiParameter parameter)
+            return;
+
+        parameter.Description = description;
+        if (examples is not null)
+            parameter.Examples = examples;
     }
 
     private static async Task<Results<Ok<AnalyseResponse[]>, NotFound, ValidationProblem>> Analyse
@@ -313,13 +434,12 @@ public static class LexiconEndpoints
         const long bytesPerKiB = 1024;
         const long bytesPerMiB = 1024 * bytesPerKiB;
 
-        if (bytes >= bytesPerMiB && bytes % bytesPerMiB == 0)
-            return $"{bytes / bytesPerMiB} MiB";
-
-        if (bytes >= bytesPerKiB)
-            return $"{bytes / (double)bytesPerKiB:0.#} KiB";
-
-        return $"{bytes} bytes";
+        return bytes switch
+        {
+            >= bytesPerMiB when bytes % bytesPerMiB == 0 => $"{bytes / bytesPerMiB} MiB",
+            >= bytesPerKiB => $"{bytes / (double)bytesPerKiB:0.#} KiB",
+            _ => $"{bytes} bytes"
+        };
     }
 
     private static async Task<Ok<FileMetadataResponse[]>> GetFiles

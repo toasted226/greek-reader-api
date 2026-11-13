@@ -26,13 +26,34 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
         );
     }
 
-    public async Task<LemmaResponse[]> QueryAsync(string form, CancellationToken ct)
+    public async Task<LemmaPageResponse> GetLexiconLemmasAsync(
+        GetLexiconLemmasRequest filter, int offset, int limit, CancellationToken ct = default)
     {
-        var normalised = Api.Normalise(form);
-        var byForm = await lexicon.GetByFormsAsync([normalised], ct);
-        return byForm.TryGetValue(normalised, out var l)
-            ? l.Select(ToLemmaResponse).ToArray()
+        PartOfSpeech? partOfSpeech = null;
+        if (!string.IsNullOrWhiteSpace(filter.PartOfSpeech))
+        {
+            if (!TryParsePartOfSpeech(filter.PartOfSpeech, out var pos))
+                return new LemmaPageResponse([], offset, limit, 0);
+
+            partOfSpeech = pos;
+        }
+
+        // Features are stored with their canonical casing and may repeat across
+        // forms, so lower-case and de-duplicate before the containment check.
+        string[] features = filter.FeatureList is { Features.Length: > 0 } featureParam
+            ? [.. featureParam.Features.Select(f => f.ToLowerInvariant()).Distinct()]
             : [];
+
+        var query = new LexiconLemmaQuery(
+            partOfSpeech,
+            string.IsNullOrWhiteSpace(filter.Lemma) ? null : filter.Lemma,
+            string.IsNullOrWhiteSpace(filter.Form) ? null : Api.Normalise(filter.Form),
+            string.IsNullOrWhiteSpace(filter.FormContains) ? null : Api.Normalise(filter.FormContains),
+            string.IsNullOrWhiteSpace(filter.Example) ? null : filter.Example,
+            features);
+
+        var (items, total) = await lexicon.GetLemmasAsync(query, offset, limit, ct);
+        return new LemmaPageResponse([.. items.Select(ToLemmaResponse)], offset, limit, total);
     }
 
     private static readonly char[] Apostrophes = ['\'', '’', 'ʼ', '‘', '᾿'];

@@ -47,6 +47,7 @@ The API owns authentication, uploads, quota enforcement, rate limiting, and pers
 - **Passwordless accounts** — email magic links or a 6-digit one-time code.
 - **Text uploads** — plain-text files up to 1 MiB, stored compressed and scoped to the owner.
 - **Morphological analysis** — token-level lemmas, glosses, examples, and inflected forms.
+- **Lexicon browsing** — page through every lemma and filter by part of speech, lemma text, inflected form (exact or partial), example text, or grammatical features. Form filters ignore accents, case, and final sigma.
 - **Saved lemmas** — save words with context and filter them by part of speech, form, feature, or date.
 - **Feature listing** — discover the grammatical features available for a part of speech, for frontend filters.
 - **Abuse controls** — IP rate limits, per-email throttling, upload validation, and per-user storage quotas.
@@ -332,7 +333,7 @@ Current scope is intentionally narrow:
 
 - **Plain text only.** `.txt`/`.text`, UTF-8, 1 MiB per file. No PDF, EPUB, DOCX, or HTML ingestion.
 - **Synchronous work.** Uploads analyse inline and sign-in sends mail inline; there is no job queue or retry worker.
-- **No paging or caching.** File and lemma lists return everything; opening a file re-runs analysis rather than serving a cached result.
+- **Limited paging and no caching.** File and saved-lemma lists return everything; the lexicon query is paged, but deep offsets are not optimised. Opening a file re-runs analysis rather than serving a cached result.
 - **Single instance.** In-memory rate limits, throttles, and Data Protection keys assume one API replica.
 - **Destructive lexicon import.** `--import` is first-deploy only; later lexicon changes need a migration.
 - **No API keys yet.** Non-browser clients must use the cookie-based sign-in flow.

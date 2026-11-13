@@ -92,7 +92,9 @@ value has no safe default and must be set.
 | Variable / setting | Default | Purpose |
 |---|---|---|
 | `Analyse__MaxTextLength` | `50000` | Maximum characters accepted by `POST /lexicon/analyse`. |
-| `Lexicon__FormMaxLength` | `100` | Maximum length of the `form` query value. |
+| `Lexicon__FormMaxLength` | `100` | Maximum length of the `form` and `formContains` query values on `GET /lexicon/query`. |
+| `Lexicon__DefaultPageSize` | `50` | Default number of lemmas returned by `GET /lexicon/query` when `limit` is omitted. |
+| `Lexicon__MaxPageSize` | `200` | Maximum accepted `limit` for `GET /lexicon/query`. |
 | `OpenApi__Enabled` | `true` | Set to `false` to disable Swagger UI and the OpenAPI JSON document. In Compose this is controlled by `OPENAPI_ENABLED`. |
 | `FileUpload__MaxFileBytes` | `1048576` (1 MiB) | Per-file upload limit; also sets the Kestrel body limit (plus 64 KiB). |
 | `FileUpload__MaxFilesPerUser` | `100` | Maximum stored files per account. |

@@ -49,6 +49,55 @@ public readonly struct FeatureListParam(string[] features)
 }
 
 /// <summary>
+/// Optional filter and paging parameters for browsing the lexicon.
+/// </summary>
+public sealed record GetLexiconLemmasRequest
+{
+    /// <summary>Filter by part of speech (e.g. "verb", "noun").</summary>
+    [FromQuery(Name = "partOfSpeech")]
+    public string? PartOfSpeech { get; init; }
+
+    /// <summary>Filter by lemma (dictionary headword) text.</summary>
+    [FromQuery(Name = "lemma")]
+    public string? Lemma { get; init; }
+
+    /// <summary>
+    /// Filter by an exact inflected form. The value is normalised through the
+    /// morphology engine, so accents, case, and final sigma do not matter.
+    /// </summary>
+    [FromQuery(Name = "form")]
+    public string? Form { get; init; }
+
+    /// <summary>
+    /// Filter by a fragment of an inflected form. The value is normalised
+    /// through the morphology engine before the substring match.
+    /// </summary>
+    [FromQuery(Name = "formContains")]
+    public string? FormContains { get; init; }
+
+    /// <summary>Filter by example sentence text.</summary>
+    [FromQuery(Name = "example")]
+    public string? Example { get; init; }
+
+    /// <summary>
+    /// Filter to lemmas whose forms include all of the listed grammatical features.
+    /// Pass as a bracket-delimited list, e.g. <c>?featureList=[masculine, nominative]</c>.
+    /// </summary>
+    [FromQuery(Name = "featureList")]
+    public FeatureListParam? FeatureList { get; init; }
+
+    /// <summary>Number of results to skip. Defaults to 0.</summary>
+    [FromQuery(Name = "offset")]
+    public int? Offset { get; init; }
+
+    /// <summary>
+    /// Maximum number of results to return. Defaults to the configured page size.
+    /// </summary>
+    [FromQuery(Name = "limit")]
+    public int? Limit { get; init; }
+}
+
+/// <summary>
 /// Optional filter parameters for retrieving a user's saved lemmas.
 /// </summary>
 public sealed record GetUserLemmasRequest
