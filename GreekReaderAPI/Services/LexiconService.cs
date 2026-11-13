@@ -115,6 +115,7 @@ public sealed class LexiconService(ILexiconRepository lexicon) : ILexiconService
                 .. userLemmas
                     .GroupBy(l => l.LemmaId)
                     .Select(g => g.OrderByDescending(l => l.SavedAt).First())
+                    .OrderByDescending(l => l.SavedAt)
             ];
         }
 
