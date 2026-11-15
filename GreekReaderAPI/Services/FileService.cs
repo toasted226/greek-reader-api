@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Globalization;
 using System.Text;
+using DbUp.Engine;
 using Microsoft.Extensions.Options;
 using GreekReader.Interop;
 
@@ -66,7 +67,8 @@ public sealed class FileService(IOptions<FileUploadOptions> options) : IFileServ
             string text;
             try
             {
-                text = Api.Canonicalise(StrictUtf8.GetString(bytes));
+                var preparsed = StrictUtf8.GetString(bytes);
+                text = Api.Canonicalise(preparsed);
             }
             catch (DecoderFallbackException)
             {
@@ -118,6 +120,7 @@ public sealed class FileService(IOptions<FileUploadOptions> options) : IFileServ
     private static bool ContainsInvalidCharacters(string text)
     {
         return text.Any(c =>
+            c != '\n' &&
             char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format);
     }
 }
