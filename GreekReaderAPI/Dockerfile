@@ -2,8 +2,10 @@
 
 # Build from the API repository root. Compose supplies the F# engine as the
 # named `engine` build context so the existing ProjectReference path is kept.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src/csharp/GreekReaderAPI
+
+COPY global.json /src/csharp/GreekReaderAPI/
 
 COPY GreekReaderAPI/GreekReaderAPI.csproj GreekReaderAPI/
 COPY GreekReaderAPI/appsettings.json GreekReaderAPI/
@@ -32,7 +34,7 @@ RUN dotnet publish GreekReaderAPI/GreekReaderAPI.csproj \
     --output /app/publish \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 
 USER root
 RUN apt-get update \
