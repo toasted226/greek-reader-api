@@ -37,7 +37,7 @@ public sealed class MailKitEmailSender(
                 await client.AuthenticateAsync(_settings.Username, _settings.Password, ct);
             }
             
-            await client.SendAsync(message, ct);
+            await client.SendAsync(new SmtpSendRequest(message), ct);
             await client.DisconnectAsync(true, ct);
             
             logger.LogInformation("Sign-in email sent to {Email}", email.To);

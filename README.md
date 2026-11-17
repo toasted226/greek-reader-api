@@ -60,8 +60,8 @@ The API owns authentication, uploads, quota enforcement, rate limiting, and pers
 
 | Component | Choice | Why |
 |---|---|---|
-| HTTP API | ASP.NET Core on .NET 10 (Minimal APIs) | First-class cookie auth, antiforgery, rate limiting, validation, and OpenAPI without extra plumbing. |
-| Morphology engine | F# on .NET 10 | Pattern matching and a strongly typed domain model suit the irregularity of Greek morphology; referenced as a project so calls stay in-process. |
+| HTTP API | ASP.NET Core on .NET 11 (Minimal APIs) | First-class cookie auth, antiforgery, rate limiting, validation, and OpenAPI without extra plumbing. |
+| Morphology engine | F# on .NET 11 | Pattern matching and a strongly typed domain model suit the irregularity of Greek morphology; referenced as a project so calls stay in-process. |
 | Database | PostgreSQL 18 | Reliable relational storage with array columns for features and glosses, `citext` emails, and TOAST for compressed text. |
 | Desktop client (in progress) | Rust + Iced | Native cross-platform desktop client for the same API, without a web runtime. |
 | Deployment | Docker Compose + a reverse proxy | One reproducible stack across three repositories; the proxy handles TLS while the containers publish only on loopback. |
@@ -86,7 +86,7 @@ greek-reader/
 - Docker Engine with Compose v2 (BuildKit enabled)
 - `git` and `openssl`
 - A few GB of free disk for images, build layers, and the database volume
-- Optional: .NET 10 SDK if you want to run the API outside Docker
+- Optional: .NET 11 SDK if you want to run the API outside Docker
 
 ### Clone and configure
 
@@ -157,12 +157,12 @@ Check container status with `docker compose ps`. If a service is unhealthy, insp
 
 ### Run the API without Docker (optional)
 
-You will need .NET 10, a local PostgreSQL instance, and the F# engine checked out at the path in `GreekReaderAPI/GreekReaderAPI.csproj`. Update the `ConnectionStrings:Postgres` value in `GreekReaderAPI/appsettings.Development.json`, then:
+You will need .NET 11 (the repository pins SDK `11.0.100` through `global.json`), a local PostgreSQL instance, and the F# engine checked out at the path in `GreekReaderAPI/GreekReaderAPI.csproj`. Update the `ConnectionStrings:Postgres` value in `GreekReaderAPI/appsettings.Development.json`, then:
 
 ```bash
 dotnet build GreekReaderAPI/GreekReaderAPI.csproj
-dotnet GreekReaderAPI/bin/Debug/net10.0/GreekReaderAPI.dll --migrate
-dotnet GreekReaderAPI/bin/Debug/net10.0/GreekReaderAPI.dll --import
+dotnet GreekReaderAPI/bin/Debug/net11.0/GreekReaderAPI.dll --migrate
+dotnet GreekReaderAPI/bin/Debug/net11.0/GreekReaderAPI.dll --import
 dotnet run --project GreekReaderAPI/GreekReaderAPI.csproj
 ```
 
