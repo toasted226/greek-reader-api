@@ -1,6 +1,6 @@
 # Greek Reader API
 
-The ASP.NET Core API for **Greek Reader**, a reading assistant for Modern Greek with morphological analysis.
+The ASP.NET Core API for **Greek Reader**, a reading assistant for Modern Greek with morphological analysis. You can find the website hosted at https://greek-reader.modulrza.app.
 
 > [!NOTE]
 > This project was made possible using [Wiktionary](https://en.wiktionary.org/) data extracted by [Kaikki](https://kaikki.org/). Many thanks to the Wiktionary contributors and to Kaikki for making it available, I sincerely appreciate your work.
